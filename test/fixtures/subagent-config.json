@@ -1,0 +1,5 @@
+{
+  "asyncByDefault": true,
+  "toolActivation": "eager",
+  "maxActiveAsyncRunsPerSession": 2
+}
