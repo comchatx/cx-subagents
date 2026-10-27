@@ -12,8 +12,8 @@ description: "When a task will take long - a research across several data source
 ## How
 
 - Call `subagent` with one agent and the whole task in your own words: what to look at, what to bring back. Leave `async` out: a run goes to the background here.
-- Then hand the conversation back: tell the seller in one sentence that the work runs in the background and that its result will come here, and answer whatever they ask next. Do not wait, sleep, poll or call `bg_wait` for it.
-- At most two helpers run at a time in one conversation; a third is refused until one ends.
+- Then hand the conversation back: tell the seller in one sentence that the work runs in the background and that its result will come here, and answer whatever they ask next.
+- On cx's computer at most two helpers run at a time in one conversation, by ComChatX's setting on the computer, and a third is refused until one ends; a computer without that setting sets no cap.
 
 ## When it comes back
 
