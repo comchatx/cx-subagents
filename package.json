@@ -28,14 +28,22 @@
   },
   "comchatx": {
     "about": "让 cx 把耗时的任务交给后台助手，自己继续回答你。",
-    "description": "任务要花很长时间时，比如跨几个数据源做调研、逐个查看大量 listing，cx 会把它交给一个在后台运行的助手，告诉你它这样做了，然后继续回答你。助手的结果会自己回到对话里。\n\n## 结果什么时候回来\n\n助手最多运行 30 分钟。做完时，cx 会在对话里告诉你结果；到 30 分钟还没做完，cx 会说它超时了。同一个对话里最多同时有两个助手在后台运行。\n\n## 费用\n\n助手和 cx 用同一个模型，由同一份余额付费。助手运行时，cx 的电脑保持开机，开机时长也要付费。\n\n## 电脑关机时\n\n如果 cx 的电脑在结果交回之前关机，这个结果就丢了，需要重新运行。",
+    "description": "任务要花很长时间时，比如跨几个数据源做调研、逐个查看大量 listing，cx 会把它交给一个在后台运行的助手，告诉你它这样做了，然后继续回答你。助手的结果会自己回到对话里。\n\n## 结果什么时候回来\n\n助手最多运行 30 分钟。做完时，cx 会在对话里告诉你结果；到 30 分钟还没做完，cx 会说它超时了。在 cx 的电脑上，同一个对话里最多同时有两个助手在后台运行：这是 ComChatX 在电脑上的设置，不是这个插件的；没有这项设置的电脑不限个数。\n\n## 费用\n\n助手和 cx 用同一个模型，由同一份余额付费。助手运行时，cx 的电脑保持开机，开机时长也要付费。\n\n## 电脑关机时\n\n如果 cx 的电脑在结果交回之前关机，这个结果就丢了，需要重新运行。",
     "mark": {
       "line": "rocket"
     },
     "section": "extensions",
     "builds": [
       "pi-subagents"
-    ]
+    ],
+    "skills": {
+      "cx-subagents": {
+        "about": {
+          "en": "Lets cx hand a long task to a helper in the background and keep answering; the result comes back into the conversation.",
+          "zh": "让 cx 把耗时的任务交给后台助手并继续回答；结果会回到对话里。"
+        }
+      }
+    }
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.3.0",

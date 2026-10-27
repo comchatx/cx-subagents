@@ -2,7 +2,7 @@ When a task will take long, such as a research across several data sources or a 
 
 ## When the result comes back
 
-A helper runs for at most 30 minutes. When it is done, cx tells you what it found in the conversation; if it is still at work after 30 minutes, cx says it ran out. At most two helpers run in the background at a time in one conversation.
+A helper runs for at most 30 minutes. When it is done, cx tells you what it found in the conversation; if it is still at work after 30 minutes, cx says it ran out. On cx's computer, at most two helpers run in the background at a time in one conversation: that is ComChatX's setting on the computer, not this package's, and a computer without that setting sets no cap.
 
 ## What it costs
 
@@ -31,7 +31,7 @@ If cx's computer stops before a result is handed back, that result is lost and t
 
 ## Tests
 
-- `test/package.test.ts`: the pinned pi lists `cx-subagents` beside `pi-subagents`' own skill, with what it needs in its description; the package ships the skill alone and names `pi-subagents` for the page.
+- `test/package.test.ts`: the pinned pi lists `cx-subagents` beside `pi-subagents`' own skill, with what it needs in its description; the `comchatx` field names the same skills pi lists from this package, with their words, for the Plugins page; the package ships the skill alone and names `pi-subagents` for the page.
 - `test/background.test.ts`, on the pinned pi in RPC mode with a scripted model on loopback, as a box starts pi:
   - the `subagent` call comes back at once with the run detached;
   - a second message is answered while the helper is still at work;
