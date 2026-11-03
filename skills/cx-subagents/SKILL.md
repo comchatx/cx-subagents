@@ -1,6 +1,6 @@
 ---
 name: cx-subagents
-description: "When a task will take long - a research across several data sources, a look through many listings - cx hands it to a helper in the background with pi-subagents' `subagent` tool, tells the seller it has, and keeps answering; the helper's result comes back into the conversation on its own. Needs pi-subagents; if no pi-subagents skill is listed, it is not installed, and the seller installs it in Plugins."
+description: "When a task will take long - a research across several data sources, a look through many listings - cx hands it to a helper in the background with pi-subagents' `subagent` tool, tells the seller it has, and keeps answering; the helper's result comes back into the conversation on its own. Needs pi-subagents; if no `subagent` tool is offered, it is not installed, and the seller installs it in Plugins."
 ---
 
 ## When a task goes to the background
