@@ -1,6 +1,6 @@
 {
   "name": "@comchatx/cx-subagents",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lets cx hand a long task to a helper in the background and keep answering you; the result comes back into the conversation by itself.",
   "license": "MIT",
   "author": "ComChatX",

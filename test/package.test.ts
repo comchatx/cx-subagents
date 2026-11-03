@@ -28,8 +28,9 @@ it("lists its one skill beside pi-subagents' own, saying when cx works in the ba
   const ours = skills.get("cx-subagents");
   expect(ours).toMatch(/^When a task will take long - a research across several data sources, a look through many listings - cx hands it to a helper in the background/);
   expect(ours).toContain("tells the seller it has, and keeps answering; the helper's result comes back into the conversation on its own.");
-  // pi installs nothing for a package, so the skill says what it needs, as the product's needing packages say it.
-  expect(ours).toContain("Needs pi-subagents; if no pi-subagents skill is listed, it is not installed, and the seller installs it in Plugins.");
+  // pi installs nothing for a package, so the skill says what it needs; a builds package is known by its tools (PRODUCT.md §2.7).
+  expect(ours).not.toContain("pi-subagents skill is listed");
+  expect(ours).toContain("Needs pi-subagents; if no `subagent` tool is offered, it is not installed, and the seller installs it in Plugins.");
 });
 
 it("names for the Plugins page the skills pi lists from it, each with its words in English and Chinese", async () => {
