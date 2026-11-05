@@ -1,43 +1,56 @@
-When a task will take long, such as a research across several data sources or a look through many listings, cx hands it to a helper that runs in the background, tells you it has, and keeps answering you. The helper's result comes back into the conversation by itself.
+When cx hands work to the background, a card for it appears under To do on the board. It holds what cx asked for. When the work is done, the same card shows its result. If it is not done after 30 minutes, the card says 超时 and shows what was done so far.
 
-## When the result comes back
-
-A helper runs for at most 30 minutes. When it is done, cx tells you what it found in the conversation; if it is still at work after 30 minutes, cx says it ran out. On cx's computer, at most two helpers run in the background at a time in one conversation: that is ComChatX's setting on the computer, not this package's, and a computer without that setting sets no cap.
-
-## What it costs
-
-A helper uses the same model as cx and is paid from the same balance. cx's computer stays on while a helper runs, and that time is billed.
+It needs [`pi-subagents`](https://www.npmjs.com/package/pi-subagents), which runs the work in the background, and [`@comchatx/cx-board`](https://www.npmjs.com/package/@comchatx/cx-board), the board. The Plugins page installs both with it. With pi-subagents alone, cx still works in the background, and no card is written.
 
 ## When cx's computer stops
 
-If cx's computer stops before a result is handed back, that result is lost and the work has to run again.
+If cx's computer stops before the work is done, its card stays as it was when the work started.
+
+## What it costs
+
+The work in the background uses the same model as cx and is paid from the same balance. cx's computer stays on while it runs, and that time is billed.
 
 ## How it is built
 
-- **pi-subagents, unchanged.** The helper is [`pi-subagents`](https://www.npmjs.com/package/pi-subagents) and its `subagent` tool. This package names it in its `comchatx` field's `builds`, so the Plugins page installs it with this one; it does not carry it. Its tests run against `pi-subagents` 0.83.0 on pi 1.3.0.
-- **One skill, `cx-subagents`.** It says when cx hands a task to the background (a long research across several sources; a look through many listings), that cx then hands the conversation back and says so, and that the result returns by itself. pi-subagents' own tool asks for an instruction before it delegates; in a ComChatX box this skill is that instruction. Its description says what it needs: pi installs nothing for a package.
-- **pi-subagents' config, carried by the box.** pi-subagents reads `extensions/subagent/config.json` in pi's agent directory once, when it loads, and the Plugins page installs it before this package, so a box's image carries the file instead of this package writing it:
+- **One extension, `extensions/board-cards.ts`.** pi loads it as TypeScript; there is no build. It ships no skill. When cx hands work to the background is cx's own judgement with pi-subagents' `subagent` tool.
+- **What it listens to.** pi-subagents emits `subagent:async-started` and `subagent:async-complete` on the session's event bus. The start carries the run id and the `subagent` call's id, and redacts the task. The extension takes the task from pi's own `tool_call` event for that call. The end carries the result.
+- **The card.** It goes in `board/<person>/todo/` under the session's directory, which in cx's computer is `/tenant`. The person is the one directory under `board/`; a board with none, or with more than one, gets no card. This is the board's shape as `cx-board` describes it. The extension imports nothing from `cx-board` and calls nothing of the board's.
+  - The name is `<YYYYMMDD-HHMMSS>-subagent-<run id>.md`, the start's time in UTC.
+  - The front matter is `kind: finding`, a `title` and an `at`. The title is the task's first line, at most 200 characters. `at` is the start.
+  - The words are the task as given. They are cut where the whole file would pass the 32 KiB the board reads.
+- **At the end** the same file in `todo/` is rewritten, its name, title and `at` kept. The words become:
+  - a single run's own output;
+  - each run's output under its agent's name, for several;
+  - at the deadline, 超时, then what the run had written. pi-subagents' own note on the stop, its "Recovery summary", is left out.
 
-  ```json
-  {
-    "asyncByDefault": true,
-    "toolActivation": "eager",
-    "maxActiveAsyncRunsPerSession": 2
-  }
-  ```
-
-  A run goes to the background unless a call says otherwise; the `subagent` tool is offered from a session's first request; and two background runs at a time in one session, where pi-subagents' own default has no cap. The 30-minute limit is pi-subagents' own default.
-- **What the box does for it.** A background run is a detached Node process of the model's user, so the box counts it as work and stays awake while it runs. Its state lives under `/tmp`, which a stop clears. The box drops the widget pi-subagents sets once a second while a run is in the background, since the page draws none. The notice that wakes cx when a run ends is not drawn; cx's own answer after it is.
+  Nothing is moved. A card the seller has already marked read stays in `done/`, and the result is a card again in `todo/` under the same name. A second start of the same run id overwrites its card. A run that ends after cx's computer stopped leaves its card as it started.
+- **pi-subagents' config is carried by the box,** not this package. `asyncByDefault` sends a run to the background. `toolActivation: "eager"` offers the `subagent` tool from the first request. `maxActiveAsyncRunsPerSession: 2` caps the runs in one conversation at two. The 30 minutes is pi-subagents' own default for a background run.
 
 ## Tests
 
-- `test/package.test.ts`: the pinned pi lists `cx-subagents` beside `pi-subagents`' own skill, with what it needs in its description; the `comchatx` field names the same skills pi lists from this package, with their words, for the Plugins page; the package ships the skill alone and names `pi-subagents` for the page.
-- `test/background.test.ts`, on the pinned pi in RPC mode with a scripted model on loopback, as a box starts pi:
-  - the `subagent` call comes back at once with the run detached;
-  - a second message is answered while the helper is still at work;
-  - the helper's result arrives as pi-subagents' notice, not displayed, and starts the turn in which cx relays it;
-  - with the box's config the session holds `0/2` background runs, and without it `0/unlimited`.
+The tests run against `pi-subagents` 0.85.0 on pi 1.4.0, the versions cx's computer runs.
+
+- **`test/board.test.ts`**, on the pinned pi in RPC mode with a scripted model on loopback, as a box starts pi. Each card is read by the board's own reader, copied into `test/fixtures/board-reader.ts` with its source lines named.
+  - A `subagent` call writes a started card whose title is the task's first line. The result rewrites the same file.
+  - A run stopped at its deadline writes 超时 with what it had.
+  - Two runs write two files.
+  - The same run id started again overwrites its card.
+- **`test/board-cards.test.ts`**, the extension on a bus of its own:
+  - the name and the front matter;
+  - a card found again after a reload;
+  - nothing moved;
+  - the task of a chain or a parallel run;
+  - no card where the board is not one person's;
+  - the 32 KiB cut;
+  - the end's words.
+- **`test/package.test.ts`:**
+  - pi lists no skill from the package and loads its one extension;
+  - the package ships the extension alone;
+  - the package names `pi-subagents` and `@comchatx/cx-board` in `comchatx.builds`.
+- **`test/background.test.ts`:**
+  - a run goes to the background and its result comes back into the conversation;
+  - the box's config caps the runs at two.
 
 ## Release
 
-A maintainer publishes the first version by hand, `npm publish --access public` from a checkout of the merged tag. Each later version is published by `.github/workflows/release.yml` on a `v<version>` tag, once this repository is the package's trusted publisher on npm.
+`.github/workflows/release.yml` publishes each version on a `v<version>` tag, once this repository is the package's trusted publisher on npm. Until then a maintainer publishes by hand, `npm publish --access public` from a checkout of the merged tag.
