@@ -1,7 +1,7 @@
 {
   "name": "@comchatx/cx-subagents",
   "version": "0.2.0",
-  "description": "Puts each helper cx sends to the background on the board as a card: what it was asked while it runs, then what it found.",
+  "description": "Puts what cx does in the background on the board.",
   "license": "MIT",
   "author": "ComChatX",
   "homepage": "https://github.com/comchatx/cx-subagents#readme",
@@ -27,8 +27,8 @@
     "test": "vitest run"
   },
   "comchatx": {
-    "about": "把 cx 交给后台助手的每件事，作为一张卡片放到看板上。",
-    "description": "cx 把一件事交给在后台运行的助手时，看板的待处理里会出现一张卡片：标题是交给助手的事的第一行，写着开始的时间和交代的全文。助手做完后，同一张卡片换成它的结果；到 30 分钟还没做完，卡片写「超时」和它已有的内容。\n\n这个插件需要 pi-subagents 和 cx-board，安装时会一起安装。\n\n## 电脑关机时\n\n如果助手做完之前 cx 的电脑关机，卡片停在开始时的样子。\n\n## 费用\n\n助手和 cx 用同一个模型，由同一份余额付费。助手运行时，cx 的电脑保持开机，开机时长也要付费。",
+    "about": "把 cx 在后台做的事放到看板上。",
+    "description": "cx 在后台做一件事时，看板的待处理里会出现一张卡片，写着 cx 交代的内容。做完后，卡片换成结果；30 分钟还没做完，卡片显示「超时」和已做到的部分。\n\n## 费用\n\n后台的工作和 cx 用同一个模型，由同一份余额付费。后台有工作时，cx 的电脑保持开机，开机时长也要付费。",
     "mark": {
       "line": "rocket"
     },
