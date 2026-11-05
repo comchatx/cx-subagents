@@ -1,7 +1,7 @@
 {
   "name": "@comchatx/cx-subagents",
-  "version": "0.1.1",
-  "description": "Lets cx hand a long task to a helper in the background and keep answering you; the result comes back into the conversation by itself.",
+  "version": "0.2.0",
+  "description": "Puts each helper cx sends to the background on the board as a card: what it was asked while it runs, then what it found.",
   "license": "MIT",
   "author": "ComChatX",
   "homepage": "https://github.com/comchatx/cx-subagents#readme",
@@ -15,40 +15,34 @@
   ],
   "type": "module",
   "pi": {
-    "skills": [
-      "./skills"
+    "extensions": [
+      "./extensions/board-cards.ts"
     ]
   },
   "files": [
-    "skills"
+    "extensions"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "comchatx": {
-    "about": "让 cx 把耗时的任务交给后台助手，自己继续回答你。",
-    "description": "任务要花很长时间时，比如跨几个数据源做调研、逐个查看大量 listing，cx 会把它交给一个在后台运行的助手，告诉你它这样做了，然后继续回答你。助手的结果会自己回到对话里。\n\n## 结果什么时候回来\n\n助手最多运行 30 分钟。做完时，cx 会在对话里告诉你结果；到 30 分钟还没做完，cx 会说它超时了。在 cx 的电脑上，同一个对话里最多同时有两个助手在后台运行：这是 ComChatX 在电脑上的设置，不是这个插件的；没有这项设置的电脑不限个数。\n\n## 费用\n\n助手和 cx 用同一个模型，由同一份余额付费。助手运行时，cx 的电脑保持开机，开机时长也要付费。\n\n## 电脑关机时\n\n如果 cx 的电脑在结果交回之前关机，这个结果就丢了，需要重新运行。",
+    "about": "把 cx 交给后台助手的每件事，作为一张卡片放到看板上。",
+    "description": "cx 把一件事交给在后台运行的助手时，看板的待处理里会出现一张卡片：标题是交给助手的事的第一行，写着开始的时间和交代的全文。助手做完后，同一张卡片换成它的结果；到 30 分钟还没做完，卡片写「超时」和它已有的内容。\n\n这个插件需要 pi-subagents 和 cx-board，安装时会一起安装。\n\n## 电脑关机时\n\n如果助手做完之前 cx 的电脑关机，卡片停在开始时的样子。\n\n## 费用\n\n助手和 cx 用同一个模型，由同一份余额付费。助手运行时，cx 的电脑保持开机，开机时长也要付费。",
     "mark": {
       "line": "rocket"
     },
     "section": "extensions",
     "builds": [
-      "pi-subagents"
-    ],
-    "skills": {
-      "cx-subagents": {
-        "about": {
-          "en": "Lets cx hand a long task to a helper in the background and keep answering; the result comes back into the conversation.",
-          "zh": "让 cx 把耗时的任务交给后台助手并继续回答；结果会回到对话里。"
-        }
-      }
-    }
+      "pi-subagents",
+      "@comchatx/cx-board"
+    ]
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "1.3.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
     "@types/node": "26.2.0",
-    "pi-subagents": "0.83.0",
+    "@vitest/coverage-v8": "4.1.11",
+    "pi-subagents": "0.85.0",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }

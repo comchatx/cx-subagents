@@ -57,6 +57,14 @@ export async function scriptedModel(script: (body: Request, last: string) => { r
 
 type Frame = Record<string, unknown>;
 
+/** A test's own extension on the session's bus: `/replay-start` sends pi-subagents' last start again, as it was, the same run id. */
+const REPLAY = `export default function (pi) {
+  let last;
+  pi.events.on("subagent:async-started", (data) => { last ??= data; });
+  pi.registerCommand("replay-start", { description: "replay", handler: async () => { pi.events.emit("subagent:async-started", { ...last }); } });
+}
+`;
+
 /**
  * The pinned pi in RPC mode, as a box's steward starts it (`src/sandbox/steward/spawn.ts`): its own agent directory as `HOME` and
  * `PI_CODING_AGENT_DIR`, offline, the tenant root its cwd; pi-subagents then this package listed in the order a click installs them,
@@ -71,7 +79,7 @@ export class Box {
   stderr = "";
   #next = 0;
 
-  constructor(modelUrl: string, options: { readonly config?: boolean } = {}) {
+  constructor(modelUrl: string, options: { readonly config?: boolean; readonly replay?: boolean } = {}) {
     this.home = mkdtempSync(join(tmpdir(), "cx-subagents-"));
     const agent = join(this.home, "agent");
     const tenant = join(this.home, "tenant");
@@ -84,6 +92,10 @@ export class Box {
     if (options.config !== false) {
       mkdirSync(join(agent, "extensions", "subagent"), { recursive: true });
       cpSync(BOX_CONFIG, join(agent, "extensions", "subagent", "config.json"));
+    }
+    if (options.replay === true) {
+      mkdirSync(join(agent, "extensions"), { recursive: true });
+      writeFileSync(join(agent, "extensions", "replay-start.ts"), REPLAY);
     }
     const env = { PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", PI_CODING_AGENT_DIR: agent, HOME: agent, PATH: process.env["PATH"] ?? "", TMPDIR: join(this.home, "tmp") };
     this.#child = spawn(process.execPath, [PI, "--mode", "rpc", "--session-dir", join(this.home, "sessions")], { cwd: tenant, env, stdio: ["pipe", "pipe", "pipe"], detached: true });
