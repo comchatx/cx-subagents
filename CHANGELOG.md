@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- The README in Chinese, `README.zh-CN.md`, which the Plugins page draws as the Overview in Chinese.
+- `comchatx.description` is removed: the Plugins page never drew it, and the card's Chinese line is `about`.
+
 ## 0.2.0
 
 - One extension, `extensions/board-cards.ts`, puts each background run of pi-subagents on the board as a card. At the start the card holds the task, its first line as the title. At the end the same file holds the result, or 超时 with what the run had at its deadline.
