@@ -33,7 +33,7 @@ it("lists no skill and loads its one extension, which listens for pi's tool call
 it("ships the extension alone, and names pi-subagents and cx-board for the Plugins page to install with it", () => {
   const packed = Object.values(JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: ROOT, encoding: "utf8" })) as Record<string, { files: { path: string }[] }>);
   expect(packed).toHaveLength(1);
-  expect(packed[0]!.files.map((file) => file.path).sort()).toEqual(["LICENSE", "README.md", "extensions/board-cards.ts", "package.json"]);
+  expect(packed[0]!.files.map((file) => file.path).sort()).toEqual(["LICENSE", "README.md", "README.zh-CN.md", "extensions/board-cards.ts", "package.json"]);
   const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { pi: unknown; dependencies?: unknown; peerDependencies?: unknown; comchatx: Record<string, unknown> };
   expect(manifest.pi).toEqual({ extensions: ["./extensions/board-cards.ts"] });
   expect(manifest.comchatx["builds"]).toEqual(["pi-subagents", "@comchatx/cx-board"]);
@@ -41,4 +41,10 @@ it("ships the extension alone, and names pi-subagents and cx-board for the Plugi
   expect(manifest.comchatx).not.toHaveProperty("skills");
   // Named, not carried: neither installed with it by npm nor bundled.
   expect([manifest.dependencies, manifest.peerDependencies]).toEqual([undefined, undefined]);
+});
+
+it("the comchatx field carries no description, which the Plugins page never draws: the card's Chinese line is about", () => {
+  const field = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { comchatx: Record<string, unknown> }).comchatx;
+  expect(field["description"]).toBeUndefined();
+  expect(field["about"]).toMatch(/[一-鿿]/);
 });

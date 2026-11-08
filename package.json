@@ -1,6 +1,6 @@
 {
   "name": "@comchatx/cx-subagents",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Puts what cx does in the background on the board.",
   "license": "MIT",
   "author": "ComChatX",
@@ -20,7 +20,8 @@
     ]
   },
   "files": [
-    "extensions"
+    "extensions",
+    "README.zh-CN.md"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -28,7 +29,6 @@
   },
   "comchatx": {
     "about": "把 cx 在后台做的事放到看板上。",
-    "description": "cx 在后台做一件事时，看板的待处理里会出现一张卡片，写着 cx 交代的内容。做完后，卡片换成结果；30 分钟还没做完，卡片显示「超时」和已做到的部分。\n\n## 费用\n\n后台的工作和 cx 用同一个模型，由同一份余额付费。后台有工作时，cx 的电脑保持开机，开机时长也要付费。",
     "mark": {
       "line": "rocket"
     },
