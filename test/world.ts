@@ -11,6 +11,8 @@ export const PI_SUBAGENTS = join(ROOT, "node_modules", "pi-subagents");
 const PI = join(ROOT, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
 /** The config the box's image carries for pi-subagents, as `comchatx/comchatx`'s `src/sandbox/image/pi-home/extensions/subagent/config.json`. */
 export const BOX_CONFIG = join(ROOT, "test", "fixtures", "subagent-config.json");
+/** A plugin the seller installed beside this one: a skill and an extension that registers a tool. */
+export const SELLER_PLUGIN = join(ROOT, "test", "fixtures", "seller-plugin");
 
 type Part = { readonly text?: string; readonly functionCall?: { readonly name: string; readonly args: Record<string, unknown> } };
 type Request = { readonly contents?: readonly { readonly role: string; readonly parts?: readonly Record<string, unknown>[] }[]; readonly tools?: readonly { readonly functionDeclarations?: readonly { readonly name: string }[] }[]; readonly systemInstruction?: unknown };
@@ -79,14 +81,14 @@ export class Box {
   stderr = "";
   #next = 0;
 
-  constructor(modelUrl: string, options: { readonly config?: boolean; readonly replay?: boolean } = {}) {
+  constructor(modelUrl: string, options: { readonly config?: boolean; readonly replay?: boolean; readonly packages?: readonly string[] } = {}) {
     this.home = mkdtempSync(join(tmpdir(), "cx-subagents-"));
     const agent = join(this.home, "agent");
     const tenant = join(this.home, "tenant");
     for (const directory of [agent, tenant, join(this.home, "tmp"), join(this.home, "sessions")]) mkdirSync(directory, { recursive: true });
     writeFileSync(join(agent, "settings.json"), JSON.stringify({
       defaultProvider: "google", defaultModel: "gemini-3.6-flash", defaultThinkingLevel: "low", transport: "sse", quietStartup: true, defaultProjectTrust: "always",
-      cacheWarming: "off", steeringMode: "all", retry: { enabled: false }, extensions: ["-builtin:llama.cpp"], packages: [PI_SUBAGENTS, ROOT],
+      cacheWarming: "off", steeringMode: "all", retry: { enabled: false }, extensions: ["-builtin:llama.cpp"], packages: [PI_SUBAGENTS, ROOT, ...(options.packages ?? [])],
     }));
     writeFileSync(join(agent, "models.json"), JSON.stringify({ providers: { google: { baseUrl: modelUrl, apiKey: "cmx-placeholder-key" } } }));
     if (options.config !== false) {
