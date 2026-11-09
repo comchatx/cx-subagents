@@ -12,7 +12,7 @@ cx 把工作交给后台时，看板的「待处理」下会出现一张对应�
 
 ## 实现方式
 
-- **两个扩展：`extensions/board-cards.ts` 和 `extensions/hand-out.ts`。** pi 以 TypeScript 直接加载它们，不需要构建。它不带任何技能。什么时候把工作交给后台，由 cx 借助 pi-subagents 的 `subagent` 工具自行判断。
+- **两个扩展：`extensions/board-cards.ts` 和 `extensions/hand-out.ts`。** pi 以 TypeScript 直接加载它们，不需要构建。它不带任何技能。什么时候把工作交给后台，由 cx 借助 pi-subagents 的 `subagent` 工具自行判断。`hand-out.ts` 在这个工具的规则旁加上一句话：cx 的每次请求里有一份，新开的助手没有。以 `context: "fork"` 启动的助手带着 cx 的对话，也就带着这句话，因为 fork 本来就是这样。助手能不能再把工作交出去，是 pi-subagents 自己的设置，`agents/helper.md` 保持 pi-subagents 的默认。
 - **它监听什么。** pi-subagents 会在会话的事件总线上发出 `subagent:async-started` 和 `subagent:async-complete`。开始事件带有运行 id 和这次 `subagent` 调用的 id，但隐去了任务内容；扩展从 pi 自己为这次调用发出的 `tool_call` 事件中取得任务。结束事件带有结果。
 - **卡片。** 卡片写在会话文件夹下的 `board/<person>/todo/` 中；在 cx 的电脑上，会话文件夹就是 `/tenant`。这个人就是 `board/` 下唯一的那个文件夹；一个都没有或不止一个时，不写卡片。这是 `cx-board` 所描述的看板结构。扩展不从 `cx-board` 导入任何内容，也不调用看板的任何功能。
   - 文件名是 `<YYYYMMDD-HHMMSS>-subagent-<run id>.md`，时间是开始时的 UTC 时间。

@@ -49,3 +49,52 @@ it("tells cx once, beside the subagent tool, that handing work out is its own ca
   expect(parent[0]!.system).toContain("helper");
   expect(times(model.asked.find((one) => one.role === "helper")!.system, HAND_OUT)).toBe(0);
 }, 180_000);
+
+const MARK = "FORK-TASK-5e1";
+const NESTED = "NESTED-TASK-8b0";
+type Body = Parameters<Parameters<typeof scriptedModel>[0]>[0];
+/** The texts of a request's user messages: the task a helper is handed is one, and a parent's own history holds none of them. */
+const userTexts = (body: Body): string => (body.contents ?? []).filter((one) => one.role === "user").flatMap((one) => one.parts ?? []).map((part) => (typeof part["text"] === "string" ? part["text"] : "")).join("\n");
+
+/**
+ * cx hands work to the helper in `context`; the helper asks once for a helper of its own, then answers; cx relays the result. A child's
+ * history leaves out its own `subagent` calls and their results (pi-subagents' child context filter), so the helper's ask is counted here.
+ */
+const nesting = (context: "fresh" | "fork") => {
+  let asked = false;
+  return (body: Body, last: string): { role: string; answer: Answer } => {
+    const users = userTexts(body);
+    if (users.includes(NESTED)) return { role: "nested", answer: { parts: [{ text: "NESTED-RESULT" }] } };
+    if (users.includes(MARK)) {
+      if (asked) return { role: "helper-after", answer: { parts: [{ text: "HELPER-RESULT: done alone." }] } };
+      asked = true;
+      return { role: "helper", answer: { parts: [{ functionCall: { name: "subagent", args: { agent: "helper", task: `${NESTED}: check one title.` } } }] } };
+    }
+    return parentTurn(context, last);
+  };
+};
+const parentTurn = (context: "fresh" | "fork", last: string): { role: string; answer: Answer } => {
+  if (last.includes("Background task completed")) return { role: "parent", answer: { parts: [{ text: "PARENT-RELAY: done." }] } };
+  if (last.startsWith("[subagent]")) return { role: "parent", answer: { parts: [{ text: "PARENT-HANDED" }] } };
+  return { role: "parent", answer: { parts: [{ functionCall: { name: "subagent", args: { agent: "helper", task: `${MARK}: draft the new listing's title.`, context } } }] } };
+};
+
+it.each(["fresh", "fork"] as const)("gives a %s helper the sentence as its context gives it, and leaves whether it hands work on to pi-subagents' own setting", async (context) => {
+  const model = await scriptedModel(nesting(context));
+  closers.push(model.close);
+  const box = new Box(model.url);
+  boxes.push(box);
+  box.prompt("List the new product.");
+  await box.until(said("PARENT-RELAY"), 120_000);
+  const helper = model.asked.find((one) => one.role === "helper")!;
+  // A fresh helper gets none; a fork carries cx's conversation, its system prompt and the sentence in it, once, as a fork does.
+  expect(times(helper.system, HAND_OUT)).toBe(context === "fork" ? 1 : 0);
+  expect(model.asked.filter((one) => one.role === "parent").map((one) => times(one.system, HAND_OUT))).toEqual(model.asked.filter((one) => one.role === "parent").map(() => 1));
+  // The helper's own ask for a helper, under pi-subagents' default for an agent that sets neither `allowNestedSubagents` nor a `subagent`
+  // tool: a fresh helper is offered no such tool, a fork keeps cx's declaration of it, and in neither does the ask start a helper. The
+  // helper goes on and ends with its own result, which cx relays.
+  expect(helper.tools.includes("subagent")).toBe(context === "fork");
+  expect(model.asked.some((one) => one.role === "helper-after")).toBe(true);
+  expect(model.asked.some((one) => one.role === "nested")).toBe(false);
+  expect(box.frames.filter(({ frame }) => frame["type"] === "tool_execution_end" && frame["toolName"] === "subagent")).toHaveLength(1);
+}, 180_000);

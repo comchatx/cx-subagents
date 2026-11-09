@@ -12,7 +12,7 @@ The work in the background uses the same model as cx and is paid from the same b
 
 ## How it is built
 
-- **Two extensions, `extensions/board-cards.ts` and `extensions/hand-out.ts`.** pi loads them as TypeScript; there is no build. It ships no skill. When cx hands work to the background is cx's own judgement with pi-subagents' `subagent` tool.
+- **Two extensions, `extensions/board-cards.ts` and `extensions/hand-out.ts`.** pi loads them as TypeScript; there is no build. It ships no skill. When cx hands work to the background is cx's own judgement with pi-subagents' `subagent` tool. `hand-out.ts` keeps one sentence beside that tool's guidelines: cx gets it once in each request, and a fresh helper none. A helper started with `context: "fork"` carries cx's conversation, and the sentence with it, because that is what a fork is. Whether a helper may hand work on is pi-subagents' own setting, which `agents/helper.md` leaves as pi-subagents sets it.
 - **What it listens to.** pi-subagents emits `subagent:async-started` and `subagent:async-complete` on the session's event bus. The start carries the run id and the `subagent` call's id, and redacts the task. The extension takes the task from pi's own `tool_call` event for that call. The end carries the result.
 - **The card.** It goes in `board/<person>/todo/` under the session's directory, which in cx's computer is `/tenant`. The person is the one directory under `board/`; a board with none, or with more than one, gets no card. This is the board's shape as `cx-board` describes it. The extension imports nothing from `cx-board` and calls nothing of the board's.
   - The name is `<YYYYMMDD-HHMMSS>-subagent-<run id>.md`, the start's time in UTC.
