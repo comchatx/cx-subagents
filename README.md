@@ -1,6 +1,6 @@
 When cx hands work to the background, a card for it appears under To do on the board. It holds what cx asked for. When the work is done, the same card shows its result. If it is not done after 30 minutes, the card says 超时 and shows what was done so far.
 
-It needs [`pi-subagents`](https://www.npmjs.com/package/pi-subagents), which runs the work in the background, and [`@comchatx/cx-board`](https://www.npmjs.com/package/@comchatx/cx-board), the board. The Plugins page installs both with it. With pi-subagents alone, cx still works in the background, and no card is written.
+It needs [`pi-subagents`](https://www.npmjs.com/package/pi-subagents), which runs the work in the background, and [`@comchatx/cx-board`](https://www.npmjs.com/package/@comchatx/cx-board), the board. The Plugins page installs both with it.
 
 ## When cx's computer stops
 
@@ -12,7 +12,7 @@ The work in the background uses the same model as cx and is paid from the same b
 
 ## How it is built
 
-- **One extension, `extensions/board-cards.ts`.** pi loads it as TypeScript; there is no build. It ships no skill. When cx hands work to the background is cx's own judgement with pi-subagents' `subagent` tool.
+- **Two extensions, `extensions/board-cards.ts` and `extensions/hand-out.ts`.** pi loads them as TypeScript; there is no build. It ships no skill. When cx hands work to the background is cx's own judgement with pi-subagents' `subagent` tool. `hand-out.ts` keeps one sentence beside that tool's guidelines: cx gets it once in each request, and a fresh helper none. A helper started with `context: "fork"` carries cx's conversation, and the sentence with it, because that is what a fork is. Whether a helper may hand work on is pi-subagents' own setting, which `agents/helper.md` leaves as pi-subagents sets it.
 - **What it listens to.** pi-subagents emits `subagent:async-started` and `subagent:async-complete` on the session's event bus. The start carries the run id and the `subagent` call's id, and redacts the task. The extension takes the task from pi's own `tool_call` event for that call. The end carries the result.
 - **The card.** It goes in `board/<person>/todo/` under the session's directory, which in cx's computer is `/tenant`. The person is the one directory under `board/`; a board with none, or with more than one, gets no card. This is the board's shape as `cx-board` describes it. The extension imports nothing from `cx-board` and calls nothing of the board's.
   - The name is `<YYYYMMDD-HHMMSS>-subagent-<run id>.md`, the start's time in UTC.
@@ -28,7 +28,7 @@ The work in the background uses the same model as cx and is paid from the same b
 
 ## Tests
 
-The tests run against `pi-subagents` 0.85.0 on pi 1.4.0, the versions cx's computer runs.
+The tests run against `pi-subagents` 0.87.0 on pi 1.5.0, the versions cx's computer runs.
 
 - **`test/board.test.ts`**, on the pinned pi in RPC mode with a scripted model on loopback, as a box starts pi. Each card is read by the board's own reader, copied into `test/fixtures/board-reader.ts` with its source lines named.
   - A `subagent` call writes a started card whose title is the task's first line. The result rewrites the same file.
@@ -44,8 +44,8 @@ The tests run against `pi-subagents` 0.85.0 on pi 1.4.0, the versions cx's compu
   - the 32 KiB cut;
   - the end's words.
 - **`test/package.test.ts`:**
-  - pi lists no skill from the package and loads its one extension;
-  - the package ships the extension alone;
+  - pi lists no skill from the package and loads its two extensions;
+  - the package ships its two extensions and `agents/helper.md`;
   - the package names `pi-subagents` and `@comchatx/cx-board` in `comchatx.builds`.
 - **`test/background.test.ts`:**
   - a run goes to the background and its result comes back into the conversation;

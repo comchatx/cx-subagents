@@ -1,6 +1,6 @@
 {
   "name": "@comchatx/cx-subagents",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Puts what cx does in the background on the board.",
   "license": "MIT",
   "author": "ComChatX",
@@ -16,10 +16,17 @@
   "type": "module",
   "pi": {
     "extensions": [
-      "./extensions/board-cards.ts"
+      "./extensions/board-cards.ts",
+      "./extensions/hand-out.ts"
+    ]
+  },
+  "pi-subagents": {
+    "agents": [
+      "./agents"
     ]
   },
   "files": [
+    "agents",
     "extensions",
     "README.zh-CN.md"
   ],
@@ -34,15 +41,18 @@
     },
     "section": "extensions",
     "builds": [
-      "pi-subagents",
+      {
+        "on": "pi-subagents",
+        "tested": "0.87.0"
+      },
       "@comchatx/cx-board"
     ]
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "@types/node": "26.2.0",
     "@vitest/coverage-v8": "4.1.11",
-    "pi-subagents": "0.85.0",
+    "pi-subagents": "0.87.0",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }

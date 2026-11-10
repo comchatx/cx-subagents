@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- One agent of the package's own, `helper` (`agents/helper.md`, listed under `pi-subagents.agents`). It runs in the background and inherits Pi's skills catalog. It declares no `extensions`, so it loads the extensions the seller installed. A helper started through it holds the skills and the tools of the seller's other plugins; pi-subagents' own agents hold neither.
+- A second extension, `extensions/hand-out.ts`, keeps one sentence beside the `subagent` tool's guidelines at each run's start: whether to hand a piece of work to a helper is cx's own judgement, and the seller need not ask for it. It says nothing of which work to hand out. cx gets it once in each request, and a fresh helper none, since a fresh helper is offered no `subagent` tool. A helper started with `context: "fork"` carries cx's conversation, and the sentence with it, because that is what a fork is. Whether a helper may hand work on stays pi-subagents' own setting, unchanged.
+- `comchatx.builds` names the pi-subagents version the package is tested with, `{ "on": "pi-subagents", "tested": "0.87.0" }`. The link keeps its name, so the Plugins page installs as before.
+- The tests run against pi-subagents 0.87.0 on pi 1.5.0.
+
 ## 0.2.1
 
 - The README in Chinese, `README.zh-CN.md`, which the Plugins page draws as the Overview in Chinese.
