@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- The card line and the Overview are the words signed on 2026-11-10: `description` "Lets cx hand off long jobs, with results on the board.", `comchatx.about` 「让 cx 把费时的事交给帮手去做，结果放上看板。」, and a README in each language for the seller, with three things to ask.
+- How it is built, its tests and its release move from the README to `DEVELOPING.md`.
+
 ## 0.3.0
 
 - One agent of the package's own, `helper` (`agents/helper.md`, listed under `pi-subagents.agents`). It runs in the background and inherits Pi's skills catalog. It declares no `extensions`, so it loads the extensions the seller installed. A helper started through it holds the skills and the tools of the seller's other plugins; pi-subagents' own agents hold neither.
