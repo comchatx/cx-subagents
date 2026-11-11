@@ -1,6 +1,6 @@
 {
   "name": "@comchatx/cx-subagents",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Lets cx hand off long jobs, with results on the board.",
   "license": "MIT",
   "author": "ComChatX",
@@ -35,6 +35,7 @@
     "test": "vitest run"
   },
   "comchatx": {
+    "name": "Helpers",
     "about": "让 cx 把费时的事交给帮手去做，结果放上看板。",
     "mark": {
       "line": "rocket"
