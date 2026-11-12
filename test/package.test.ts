@@ -57,3 +57,8 @@ it("the card line is the signed words, in English and in Chinese", () => {
   expect(manifest.description).toBe("Lets cx hand off long jobs, with results on the board.");
   expect(manifest.comchatx["about"]).toBe("让 cx 把费时的事交给帮手去做，结果放上看板。");
 });
+
+it("the card's name is comchatx.name, the one signed on 2026-11-11", () => {
+  const field = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { comchatx: { name?: unknown } }).comchatx;
+  expect(field.name).toBe("Helpers");
+});

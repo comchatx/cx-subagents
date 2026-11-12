@@ -1,4 +1,4 @@
-While a helper works, you and cx keep talking. Its card on the board shows what cx asked for, then the result, or after 30 minutes 超时 and what was done. It needs pi-subagents and cx-board, which Plugins installs with it.
+While a helper works, you and cx keep talking. Its card on the board shows what cx asked for, then the result, or after 30 minutes 超时 and what was done. It needs pi-subagents and Board, which Plugins installs with it.
 
 Some things you can ask:
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- The card's name is the one signed on 2026-11-11, "Helpers", in `comchatx.name`, the same on the Chinese and the English page.
+- The README, in English and Chinese, calls each of our plugins by its card's name, not its npm name.
+
 ## 0.3.1
 
 - The card line and the Overview are the words signed on 2026-11-10: `description` "Lets cx hand off long jobs, with results on the board.", `comchatx.about` 「让 cx 把费时的事交给帮手去做，结果放上看板。」, and a README in each language for the seller, with three things to ask.
