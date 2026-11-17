@@ -59,6 +59,7 @@ it("the card line is the signed words, in English and in Chinese", () => {
 });
 
 it("the card's name is comchatx.name, the one signed on 2026-11-11", () => {
-  const field = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { comchatx: { name?: unknown } }).comchatx;
-  expect(field.name).toBe("Helpers");
+  const field = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { comchatx: { name?: unknown; nameZh?: unknown } }).comchatx;
+  expect(field.name).toBe("cx Helpers");
+  expect(field.nameZh).toBe("cx 帮手");
 });
