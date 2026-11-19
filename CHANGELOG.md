@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4
+
+- The README's first paragraph, in English and Chinese, is the one signed on 2026-11-18, which names no other plugin: 「费时间的事，cx 可以交给帮手在后台去做……适合一次查很多商品、做一大批对比这类要花时间的事。」.
+- `comchatx.builds` gives each link its reason, signed on 2026-11-18: pi-subagents "Lets helpers work in the background." / 「用于让帮手在后台做事。」 (its `tested` version kept), and `@comchatx/cx-board`, now an object, "Puts helpers' cards on the board." / 「用于在看板上放帮手的卡片。」.
+
 ## 0.3.3
 
 - The card's name is the one signed on 2026-11-17: "cx Helpers" on the English page (`comchatx.name`) and 「cx 帮手」 on the Chinese page (`comchatx.nameZh`).

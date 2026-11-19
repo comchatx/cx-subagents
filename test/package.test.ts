@@ -38,7 +38,10 @@ it("ships its extensions and its one helper, names pi-subagents at the version i
   expect(manifest.pi).toEqual({ extensions: ["./extensions/board-cards.ts", "./extensions/hand-out.ts"] });
   expect(manifest["pi-subagents"]).toEqual({ agents: ["./agents"] });
   // One place says what was tested: the link the page installs by keeps its name, and says the version beside it, which the tests pin.
-  expect(manifest.comchatx["builds"]).toEqual([{ on: "pi-subagents", tested: manifest.devDependencies["pi-subagents"] }, "@comchatx/cx-board"]);
+  expect(manifest.comchatx["builds"]).toEqual([
+    { on: "pi-subagents", tested: manifest.devDependencies["pi-subagents"], why: { en: "Lets helpers work in the background.", zh: "用于让帮手在后台做事。" } },
+    { on: "@comchatx/cx-board", why: { en: "Puts helpers' cards on the board.", zh: "用于在看板上放帮手的卡片。" } },
+  ]);
   expect(manifest.devDependencies["@earendil-works/pi-coding-agent"]).toBe("1.5.0");
   // The Plugins page lists a package's skills from this field alone; with no skill there is none.
   expect(manifest.comchatx).not.toHaveProperty("skills");

@@ -1,4 +1,4 @@
-While a helper works, you and cx keep talking. Its card on the board shows what cx asked for, then the result, or after 30 minutes 超时 and what was done. It needs pi-subagents and [Flex Board](https://www.npmjs.com/package/@comchatx/cx-board), which Plugins installs with it.
+cx can hand work that takes time to a helper in the background, while you and cx keep talking. Each job gets a card on the board that shows what cx asked for, then the result, or after 30 minutes 超时 and what was done. Useful for checking many products at once or running a large comparison.
 
 Some things you can ask:
 
