@@ -20,7 +20,7 @@ const T0 = Date.UTC(2026, 10, 5, 9, 30, 0);
  * The extension on a bus of its own, as pi hands it one: pi's events by name, and the session's bus pi-subagents emits on. `facts` is
  * what the computer hands the person's pi (`CX_PERSON_FACTS`), with `BOARD` standing for the board's directory under the session's.
  */
-function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) => string) {
+function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) => string, boot?: string) {
   const cwd = mkdtempSync(join(tmpdir(), "cx-subagents-cards-"));
   scratches.push(cwd);
   for (const person of people) mkdirSync(join(cwd, "board", person), { recursive: true });
@@ -33,7 +33,7 @@ function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) =
   } as unknown as ExtensionAPI;
   const before = process.env["CX_PERSON_FACTS"];
   if (facts === undefined) delete process.env["CX_PERSON_FACTS"]; else process.env["CX_PERSON_FACTS"] = facts(cwd);
-  boardCards(pi, { now: () => clock.at });
+  boardCards(pi, { now: () => clock.at, boot: () => boot });
   const fire = (name: string, event: Record<string, unknown>) => { for (const handler of handlers.get(name) ?? []) handler(event, { cwd }); };
   sessions.push(() => { fire("session_shutdown", { type: "session_shutdown" }); if (before === undefined) delete process.env["CX_PERSON_FACTS"]; else process.env["CX_PERSON_FACTS"] = before; });
   const person = join(cwd, "board", people[0] ?? "none");
@@ -298,6 +298,30 @@ it("counts a pause as a wait: the stretch at work added, nothing taken from the 
   s.complete({ id: "run-1", state: "paused", durationMs: 630_000 });
   const after = s.card(file)!;
   expect([before, after.state, after.ran, after.since, after.took, worked(T0 + 700_000)]).toEqual([120, "paused", 120, undefined, 630, 120]);
+});
+
+it("marks off a card at work whose run's folder outlived the stop on the disk, its status still at work under another boot, and keeps it off at the end pi-subagents then gives it", () => {
+  const s = session(["acct_1"], undefined, "boot-now");
+  const status = (run: string, state: string, bootId?: string) => {
+    const dir = join(s.cwd, "runs", run);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "status.json"), JSON.stringify({ runId: run, state, ...(bootId === undefined ? {} : { bootId }) }));
+    return dir;
+  };
+  const cases = [["cut", "running", "boot-before"], ["queued", "queued", "boot-before"], ["here", "running", "boot-now"], ["unknown", "running", undefined], ["ended-unheard", "complete", "boot-before"]] as const;
+  for (const [n, [name, state, bootId]] of cases.entries()) {
+    s.call(`c${n}`, { task: name });
+    s.started({ id: `run-${name}`, toolCallId: `c${n}`, asyncDir: status(`run-${name}`, state, bootId) });
+    s.result(`c${n}`);
+    s.clock.at += 1000;
+  }
+  s.start();
+  const states = () => s.files().map((name) => [s.card(name)?.name, s.card(name)?.state]);
+  expect(states()).toEqual([["cut", "off"], ["queued", "off"], ["here", "working"], ["unknown", "working"], ["ended-unheard", "working"]]);
+  // pi-subagents reconciles the cut run as failed, and that end reaches the package.
+  s.complete({ id: "run-cut", state: "failed", success: false, durationMs: 10 });
+  s.complete({ id: "run-ended-unheard", state: "complete", success: true, durationMs: 10 });
+  expect(states()).toEqual([["cut", "off"], ["queued", "off"], ["here", "working"], ["unknown", "working"], ["ended-unheard", "done"]]);
 });
 
 it("marks off, when a session starts, a card at work whose run's folder went with cx's computer, and only that one", () => {

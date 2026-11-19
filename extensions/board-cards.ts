@@ -59,7 +59,9 @@ export type Card = {
 };
 /** A card as read back: one of the package's earlier versions (`kind: finding`) has no state and no face. */
 export type ReadCard = Omit<Card, "state" | "face"> & { readonly state?: State; readonly face?: number };
-type Options = { readonly now?: () => number };
+/** This boot of the computer, as pi-subagents reads it on Linux; none where the system gives none. */
+const linuxBoot = (): string | undefined => { try { return readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() || undefined; } catch { return undefined; } };
+type Options = { readonly now?: () => number; readonly boot?: () => string | undefined };
 
 const text = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
 const record = (value: unknown): Record<string, unknown> => (typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {});
@@ -225,13 +227,22 @@ export function moveEarlier(person: string): number {
 }
 
 /**
- * A card still at work whose run is gone is marked `off` when a session starts: pi-subagents keeps a run's folder under the system's
- * temporary directory, which a stop of cx's computer clears, so a run that was at work then has no `status.json` now.
+ * Whether a run was cut by a stop of cx's computer. Where the computer keeps pi-subagents' folder in `/tmp`, a stop clears it, so the run
+ * has no `status.json`; where it keeps it on its disk (`comchatx.env`), the run's `status.json` still says it runs or waits its turn, under
+ * a boot of the computer that is not this one. Where the system gives no boot, a run whose folder stands is taken as not cut.
  */
-export function markOff(person: string): number {
+function cutByStop(dir: string, boot: string | undefined): boolean {
+  let status: Record<string, unknown>;
+  try { status = record(JSON.parse(readFileSync(join(dir, "status.json"), "utf8"))); } catch { return !existsSync(join(dir, "status.json")); }
+  const ran = text(status["bootId"]);
+  return (status["state"] === "running" || status["state"] === "queued") && boot !== undefined && ran !== undefined && ran !== boot;
+}
+
+/** A card still at work whose run a stop of cx's computer cut is marked `off` when a session starts. */
+export function markOff(person: string, boot: string | undefined = linuxBoot()): number {
   let marked = 0;
   for (const card of cardsIn(person)) {
-    if (card.state === undefined || !AT_WORK.has(card.state) || card.dir === undefined || existsSync(join(card.dir, "status.json"))) continue;
+    if (card.state === undefined || !AT_WORK.has(card.state) || card.dir === undefined || !cutByStop(card.dir, boot)) continue;
     write(person, { ...card, face: card.face ?? 0, state: "off" });
     marked += 1;
   }
@@ -375,6 +386,7 @@ class Follower {
  */
 export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
   const now = options.now ?? Date.now;
+  const boot = options.boot ?? linuxBoot;
   const asked = new Map<string, string>();
   const running = new Set<string>();
   const followers = new Map<string, Follower>();
@@ -424,7 +436,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const person = personDir(cwd);
     if (person === undefined) return;
     moveEarlier(person);
-    markOff(person);
+    markOff(person, boot());
     for (const card of cardsIn(person)) if (card.state !== undefined && AT_WORK.has(card.state) && card.dir !== undefined) follow(person, card.run, card.dir);
   });
   pi.on("session_shutdown", () => { for (const run of [...followers.keys()]) unfollow(run); });
@@ -474,7 +486,8 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const dir = card?.dir ?? text(event["asyncDir"]);
     write(person, {
       file: card?.file ?? `${stamp(ended)}${suffix(run)}`, name: card?.name || (text(event["agent"]) ?? "subagent"), face: card?.face ?? nextFace(person),
-      state: endState(event), at: card?.at ?? ended, ended, took, ran: card === undefined ? took : worked(card), run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
+      // A run a stop cut, its card marked `off` at the start, ends here as pi-subagents' own reconciliation fails it: it stays `off`.
+      state: card?.state === "off" ? "off" : endState(event), at: card?.at ?? ended, ended, took, ran: card === undefined ? took : worked(card), run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
       ...(card?.files === undefined ? {} : { files: card.files }), ...(card?.reads === undefined ? {} : { reads: card.reads }),
     });
   });

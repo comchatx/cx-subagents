@@ -43,6 +43,9 @@
       "line": "rocket"
     },
     "section": "extensions",
+    "env": {
+      "PI_SUBAGENTS_TEMP_ROOT": "{data}/pi-subagents"
+    },
     "board": {
       "tab": "帮手",
       "page": "page/helpers.html",
