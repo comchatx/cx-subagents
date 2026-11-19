@@ -324,11 +324,13 @@ export function sessionArrivals(path: string, tree: string): { readonly files: r
 
 /**
  * One run's `events.jsonl`, read as pi-subagents appends it, each new whole line handed on once; a line cut at the file's end waits for
- * its rest. Its folder is watched, so a line is read when it is written.
+ * its rest, and a character cut at a chunk's edge for its other bytes. Its folder is watched, so a line is read when it is written.
  */
 class Follower {
   #at = 0;
   #rest = "";
+  /** One decoder for the whole file, so a character cut by a chunk's edge is read whole with the next chunk. */
+  readonly #decoder = new TextDecoder();
   #watcher: FSWatcher | undefined;
   constructor(readonly path: string, readonly heard: (event: Record<string, unknown>) => void) {}
 
@@ -348,7 +350,7 @@ class Follower {
         const got = readSync(fd, chunk, 0, chunk.length, this.#at);
         if (got <= 0) break;
         this.#at += got;
-        const lines = (this.#rest + chunk.subarray(0, got).toString("utf8")).split("\n");
+        const lines = (this.#rest + this.#decoder.decode(chunk.subarray(0, got), { stream: true })).split("\n");
         this.#rest = lines.pop() ?? "";
         for (const line of lines) {
           if (line.trim() === "") continue;

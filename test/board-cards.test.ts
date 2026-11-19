@@ -401,6 +401,19 @@ it("takes from the helper's session file what it wrote and read after its log st
   expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ files: ["first.md", "late.md"], reads: ["https://example.com/a"] });
 });
 
+it("reads a name whole where a chunk's edge cuts one of its characters", () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  // A line long enough that the path's 库 starts one byte before the follower's first 1 MiB chunk ends.
+  const start = (pad: string) => `${JSON.stringify({ type: "x", pad })}\n${JSON.stringify({ type: "tool_execution_start", toolCallId: "t1", toolName: "write", args: { path: "reports/库存.md" } })}\n`;
+  const at = Buffer.from(start("")).indexOf(Buffer.from("库"));
+  writeFileSync(join(run.dir, "events.jsonl"), `${start("a".repeat((1 << 20) - 1 - at))}${JSON.stringify({ type: "tool_execution_end", toolCallId: "t1", toolName: "write" })}\n`);
+  expect(readFileSync(join(run.dir, "events.jsonl")).subarray((1 << 20) - 1, (1 << 20) + 2).toString()).toBe("库");
+  s.call("c1", { task: "stock" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  expect(s.card("20261105-093000-subagent-run-1.md")?.files).toEqual(["reports/库存.md"]);
+});
+
 it("names a file by its path in cx's folder, and lists none outside it nor any address that is not a web page's", () => {
   expect(arrival("write", { path: "a/b.md" }, "/tenant")).toEqual({ files: ["a/b.md"], reads: [] });
   expect(arrival("edit", { path: "/tenant/a/../c.md" }, "/tenant")).toEqual({ files: ["c.md"], reads: [] });

@@ -3,8 +3,8 @@
 ## 0.5.0
 
 - A card carries what its helper wrote and read so far, while it works and after: up to three files as the board's file box, past three two and 查看全部 {count} 个文件 / Show all {count} files, and {count} 份参考资料 / {count} references, with "1 reference" in English.
-- Either press opens that helper's whole list in the cards' place: the files it wrote, then what it read, pages before files; ← 帮手 / ← Helpers or Escape goes back. A file's box shows the file on the board; a page opens in a new tab.
-- The package follows each run's `events.jsonl` and rewrites the card as each `write`, `edit`, `read` and `fetch_content` call ends well, reads it once more at the run's end, and takes from the helper's session file what its log no longer held past its 50 MiB bound.
+- Either press opens that helper's whole list in the cards' place: the files it wrote, then what it read, pages before files; ← 帮手 / ← Helpers or Escape goes back to the press it came by, brought back into view. A file's box shows the file on the board; a page opens in a new tab.
+- The package follows each run's `events.jsonl` and rewrites the card when a `write`, `edit`, `read` or `fetch_content` call that ends well adds an entry that fits, reads it once more at the run's end, and takes from the helper's session file what its log no longer held past its 50 MiB bound.
 
 ## 0.4.0
 

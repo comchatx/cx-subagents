@@ -263,9 +263,9 @@
   const row = (one) => h("li", {}, isPage(one) ? pageLink(one) : fileBox(one));
   const turn = () => icon("M9.5 6l6 6-6 6");
 
-  /** One helper's whole list stands in the cards' place: which helper, which part the seller came to, and how far down the cards were. */
+  /** One helper's whole list stands in the cards' place: which helper, and which part the seller came to. */
   let view = null;
-  const goTo = (one, at) => () => { view = { file: one.file, at, top: window.scrollY }; draw(); land(); };
+  const goTo = (one, at) => () => { view = { file: one.file, at }; draw(); land(); };
 
   /** What a helper wrote and read so far: up to three files on the card, past three two and the press to them all; what it read, one press. */
   function lists(one) {
@@ -277,15 +277,18 @@
     ];
   }
 
-  /** Back to the cards, as far down as the seller had read them, the keyboard on the press they came by. */
+  /**
+   * Back to the cards, the keyboard on the press the seller came by and that press in view. The board scrolls outside the page's frame and
+   * grows the frame back to the cards' height after this draw, so the press is brought into view again when the frame takes that size.
+   */
   function leave() {
-    const { file, at, top } = view;
+    const { file, at } = view;
     view = null;
     draw();
-    window.scrollTo(0, top);
     const press = document.getElementById(file)?.querySelector(`[data-act="${at === "reads" ? "reads" : "all"}"]`) ?? document.getElementById(file)?.querySelector("[data-act]");
     press?.focus({ preventScroll: true });
     press?.scrollIntoView({ block: "nearest" });
+    window.addEventListener("resize", () => document.activeElement?.scrollIntoView({ block: "nearest" }), { once: true });
   }
 
   /**
@@ -301,11 +304,12 @@
       h("div", { class: "hc-head" }, face(one), h("div", { class: "hc-id" }, h("h2", { class: "hc-name", id: "whole-name", tabindex: "-1", dir: "auto" }, one.name), h("p", { class: "hc-now" }, h("span", { class: "hc-line" }, nowLine(one))))),
       part("files", w().createdFiles, one.files), part("reads", w().references, [...pages, ...opened]));
   }
-  /** The keyboard lands on the part the seller asked for, which brings it into view; the files are at the page's top. */
+  /** The keyboard lands on the part the seller asked for, brought into view by the board's own scroll; the files are at the page's top. */
   function land() {
-    window.scrollTo(0, 0);
     const at = view?.at === "reads" ? document.getElementById("whole-reads") : null;
-    if (at && !at.hidden) { at.focus({ preventScroll: true }); at.scrollIntoView({ block: "start" }); } else document.getElementById("whole-name")?.focus({ preventScroll: true });
+    if (at && !at.hidden) { at.focus({ preventScroll: true }); at.scrollIntoView({ block: "start" }); return; }
+    document.querySelector(".hc-back")?.scrollIntoView({ block: "start" });
+    document.getElementById("whole-name")?.focus({ preventScroll: true });
   }
 
   /** The name fields open while the page draws again: each is put back as it stands, so its words, its caret and the keyboard stay. */
@@ -352,7 +356,7 @@
     drawing = true;
     const focused = document.activeElement;
     const host = focused?.closest?.(".hc-card, .hc-all");
-    const held = host ? { file: host.classList.contains("hc-all") ? `${view?.file}-whole` : host.id, act: focused.dataset.act, key: focused.dataset.cxFile ?? focused.getAttribute("href") ?? focused.id } : undefined;
+    const held = host ? { file: host.classList.contains("hc-all") ? `${view?.file}-whole` : host.id, part: focused.closest(".hc-all section")?.id ?? "", act: focused.dataset.act, key: focused.dataset.cxFile ?? focused.getAttribute("href") ?? focused.id } : undefined;
     const listed = view && cards.get(view.file);
     if (view && listed === undefined) view = null;
     if (listed) {
@@ -376,13 +380,14 @@
   }
 
   /**
-   * The control the keyboard was on, drawn again: the same file or page by what it holds, else the same press. A file box that gave its
+   * The control the keyboard was on, drawn again: the same file or page by what it holds and the part of the list it is in, a file both
+   * written and read standing in each, else the same press. A file box that gave its
    * place to the press to the whole list, as a fourth file comes, hands the keyboard to that press.
    */
   function findHeld(held) {
     const host = document.getElementById(held.file);
     if (!host) return undefined;
-    const same = [...host.querySelectorAll(held.act ? `[data-act="${held.act}"]` : "[id]")].find((one) => (one.dataset.cxFile ?? one.getAttribute("href") ?? one.id) === held.key);
+    const same = [...host.querySelectorAll(held.act ? `[data-act="${held.act}"]` : "[id]")].find((one) => (one.dataset.cxFile ?? one.getAttribute("href") ?? one.id) === held.key && (one.closest(".hc-all section")?.id ?? "") === held.part);
     if (same) return same;
     if (held.act === "file") return host.querySelector('[data-act="all"]') ?? undefined;
     return held.act ? host.querySelector(`[data-act="${held.act}"]`) ?? undefined : undefined;

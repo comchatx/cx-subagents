@@ -289,3 +289,16 @@ it("takes what arrives while the page is open: the new file in its place, the ke
   expect([[...p.document.querySelectorAll('.hc-all [data-act="file"]')].map((box) => box.getAttribute("data-cx-file")), p.document.querySelector("#whole-files")?.textContent, focused()])
     .toEqual([[...FOUR, "reports/fifth.md", "data/orders.csv"], "生成的 5 个文件", "reports/prices.csv"]);
 });
+
+it("keeps the keyboard on a file's box in the part of the list it is in, where the file was both written and read", async () => {
+  const one = card("a-subagent-1.md", { files: ["reports/shared.md"], reads: ["https://www.amazon.com/dp/B0EXAMPLE1", "reports/shared.md"] });
+  const p = page([one]);
+  await settle();
+  (p.document.querySelector('[data-act="reads"]') as unknown as Press).click();
+  await settle();
+  const box = (part: string) => p.document.querySelector(`#part-${part} [data-cx-file="reports/shared.md"]`) as unknown as { focus(): void };
+  box("reads").focus();
+  await p.change({ ...one, files: ["reports/shared.md", "reports/new.md"] });
+  const on = p.document.activeElement as unknown as { getAttribute(name: string): string | null; closest(selector: string): { id: string } | null };
+  expect([on.getAttribute("data-cx-file"), on.closest("section")?.id, p.document.querySelectorAll("#part-files [data-cx-file]").length]).toEqual(["reports/shared.md", "part-reads", 2]);
+});

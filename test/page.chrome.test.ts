@@ -17,9 +17,9 @@ const CARDS = [card("c-subagent-3.md", "Price check", 2), card("b-subagent-2.md"
  * page, what it writes kept in `window.writes`, the files it asks the board to show in `window.opened`, taken from a press on a file's box
  * as the board's frame takes it, and `window.notice(file, text)` changing a file and saying so as the board does.
  */
-const BRIDGE = `<script>
+const bridge = (cards: readonly Card[]): string => `<script>
 (() => {
-  const files = new Map(${JSON.stringify(CARDS.map((one, n) => [one.file, { text: cardText(one), modified: 1000 + n }]))});
+  const files = new Map(${JSON.stringify(cards.map((one, n) => [one.file, { text: cardText(one), modified: 1000 + n }]))});
   const heard = new Map();
   window.writes = [];
   window.opened = [];
@@ -36,11 +36,29 @@ const BRIDGE = `<script>
 })();
 </script>`;
 
+/**
+ * The board as it holds a page: a frame as wide as the window and as tall as its page, grown after each draw, and the board's own scroll
+ * outside it.
+ */
+const HOST = `<!doctype html><body style="margin:0"><iframe id="frame" src="/many" style="display:block;width:100%;height:0;border:0"></iframe><script>
+const frame = document.getElementById("frame");
+frame.onload = () => {
+  const page = frame.contentDocument.getElementById("page");
+  const fit = () => { frame.style.height = Math.ceil(page.getBoundingClientRect().bottom + 16) + "px"; };
+  new ResizeObserver(fit).observe(page);
+  fit();
+};
+</script></body>`;
+
+/** Eight helpers, each with four files: the cards stand far taller than one helper's list. */
+const MANY = Array.from({ length: 8 }, (_, n) => ({ ...card(`${String.fromCharCode(97 + n)}-subagent-${String(n + 1)}.md`, `Helper ${String(n + 1)}`, n), at: T0 - n * 60_000, files: FILES }));
+
 let server: Server;
 let address = "";
 beforeAll(async () => {
-  const page = readFileSync(join(ROOT, "page", "helpers.html"), "utf8").replace('<body class="kit">', `<body class="kit">${BRIDGE}`);
-  server = createServer((_request, response) => { response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(page); });
+  const html = readFileSync(join(ROOT, "page", "helpers.html"), "utf8");
+  const page = (cards: readonly Card[]) => html.replace('<body class="kit">', `<body class="kit">${bridge(cards)}`);
+  server = createServer((request, response) => { response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(request.url === "/host" ? HOST : request.url === "/many" ? page(MANY) : page(CARDS)); });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   address = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
 });
@@ -135,6 +153,31 @@ it.skipIf(at === undefined)("shows a file on the board from its box, and leads t
     expect(await browser.evaluate<string | null>(FOCUS)).toBe("whole-reads");
     await press('.hc-all [data-act="back"]');
     expect(await browser.evaluate<string>("document.activeElement.textContent")).toBe("1 reference");
+  } finally {
+    await browser.close();
+  }
+}, 60_000);
+
+it.skipIf(at === undefined)("brings the press the seller came by back into the board's view on the way back from a list opened low on the cards", async () => {
+  const browser = await chrome(at!, 800, 200);
+  try {
+    const settle = () => new Promise((done) => setTimeout(done, 300));
+    const inFrame = (expression: string) => `(() => { const document = window.frames[0].document; return ${expression}; })()`;
+    const opener = inFrame(`(() => { const frame = window.document.getElementById("frame").getBoundingClientRect(), r = document.getElementById("h-subagent-8.md")?.querySelector('[data-act="all"]')?.getBoundingClientRect(); return r === undefined ? null : { x: frame.left + r.left + 10, top: frame.top + r.top, bottom: frame.top + r.bottom, view: window.innerHeight, focus: document.activeElement?.textContent ?? null }; })()`);
+    await browser.open(`${address}host`);
+    await settle();
+    await browser.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
+    await settle();
+    const low = (await browser.evaluate<{ x: number; top: number; bottom: number; view: number }>(opener))!;
+    expect(await browser.evaluate<number>("window.scrollY")).toBeGreaterThan(0);
+    await browser.press(low.x, (low.top + low.bottom) / 2);
+    await settle();
+    expect(await browser.evaluate<boolean>(inFrame('document.querySelector(".hc-all") !== null'))).toBe(true);
+    await browser.key("Escape");
+    await settle();
+    const back = (await browser.evaluate<{ top: number; bottom: number; view: number; focus: string }>(opener))!;
+    // In view within a pixel: the browser places it at the window's edge to a fraction of one.
+    expect([back.focus, back.top >= -1 && back.bottom <= back.view + 1]).toEqual(["Show all 4 files", true]);
   } finally {
     await browser.close();
   }
