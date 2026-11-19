@@ -182,9 +182,9 @@ function earlierPlaces(person: string): string[] {
 /**
  * The package's cards from before the tab, moved into it: each file that reads as one (`EARLIER_NAME`, `EARLIER_HEAD`), from every place
  * one can lie, written as a card of the tab that ended at its file's last write — at its time limit where its words begin 「超时」, else
- * done, a handled one too — and the earlier file removed. A file that does not read as one stays as it is. Where the tab's file of that
- * name is another file, nothing is written and the earlier card stays; where it is the same run's card, only the earlier copy goes. The
- * person's own `todo/` and `done/` are then removed where nothing else is left in them; a tab's places stay as the board made them.
+ * done, a handled one too — and the earlier file removed. A file that does not read as one stays as it is. Where a file already stands at
+ * its place in the tab, whatever it holds, nothing is written and nothing removed: the earlier card stays where it is. The person's own
+ * `todo/` and `done/` are then removed where nothing else is left in them; a tab's places stay as the board made them.
  */
 export function moveEarlier(person: string): number {
   let moved = 0;
@@ -199,17 +199,11 @@ export function moveEarlier(person: string): number {
       if (!EARLIER_HEAD.test(raw)) continue;
       const old = readCard(name, raw);
       if (old === undefined) continue;
-      const there = join(tabDir(person), name);
-      if (existsSync(there)) {
-        let same = false;
-        try { const raw = readFileSync(there, "utf8"); same = /^kind: "helper"$/m.test(raw) && readCard(name, raw)?.run === old.run; } catch { /* read as another file */ }
-        if (!same) continue;
-      } else {
-        write(person, {
-          file: name, name: old.name, face: nextFace(person), state: /^超时(\n|$)/.test(old.task) ? "timeout" : "done",
-          at: old.at, ended: modified, took: Math.max(0, Math.round((modified - old.at) / 1000)), run: old.run, task: old.task,
-        });
-      }
+      if (existsSync(join(tabDir(person), name))) continue;
+      write(person, {
+        file: name, name: old.name, face: nextFace(person), state: /^超时(\n|$)/.test(old.task) ? "timeout" : "done",
+        at: old.at, ended: modified, took: Math.max(0, Math.round((modified - old.at) / 1000)), run: old.run, task: old.task,
+      });
       try { unlinkSync(path); moved += 1; } catch { /* left as it is */ }
     }
     if (EARLIER.some((place) => from === join(person, place))) try { rmdirSync(from); } catch { /* the seller's files are in it */ }
@@ -305,7 +299,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
   let cwd = process.cwd();
 
   /** The seconds a card at work has worked so far: before its present stretch, and in it. */
-  const worked = (card: Card): number => (card.ran ?? 0) + (card.since === undefined ? 0 : Math.max(0, Math.round((now() - card.since) / 1000)));
+  const worked = (card: Pick<Card, "ran" | "since">): number => (card.ran ?? 0) + (card.since === undefined ? 0 : Math.max(0, Math.round((now() - card.since) / 1000)));
   /** Rewrites a run's card with what changed, the name and face its file holds kept. */
   const update = (person: string, run: string, change: (card: Card) => Card): void => {
     const card = found(person, run);
@@ -382,7 +376,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const dir = card?.dir ?? text(event["asyncDir"]);
     write(person, {
       file: card?.file ?? `${stamp(ended)}${suffix(run)}`, name: card?.name || (text(event["agent"]) ?? "subagent"), face: card?.face ?? nextFace(person),
-      state: endState(event), at: card?.at ?? ended, ended, took, ran: took, run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
+      state: endState(event), at: card?.at ?? ended, ended, took, ran: card === undefined ? took : worked(card), run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
     });
   });
 }
