@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5
+
+- The README, in English and Chinese, gains a paragraph after the first, signed on 2026-11-19: what a helper's card does not list, and where the data's cost is shown.
+
 ## 0.3.4
 
 - The README's first paragraph, in English and Chinese, is the one signed on 2026-11-18, which names no other plugin: 「费时间的事，cx 可以交给帮手在后台去做……适合一次查很多商品、做一大批对比这类要花时间的事。」.
