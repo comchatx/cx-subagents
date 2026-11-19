@@ -16,14 +16,14 @@ const card = (file: string, more: Partial<Card>): Card => ({ file, name: file, f
 
 /**
  * The package's page as the board loads it, with the board's bridge stood in for: the tab's files, read and written, and what it hears.
- * The figure's script is the app's and draws a picture: the page's own script runs, with the figure stood in for.
+ * The board hands the figure, the app's own, which draws a picture: here it is stood in for, or not handed at all.
  */
-function page(files: Card[], locale: "zh" | "en" = "zh") {
+function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
   const window = new Window({ url: "https://pages.invalid/", settings: { disableJavaScriptEvaluation: true } });
   windows.push(window);
   const html = readFileSync(join(ROOT, "page", "helpers.html"), "utf8");
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]!);
-  expect(scripts).toHaveLength(2);
+  expect(scripts).toHaveLength(1);
   window.document.write(html.replace(/<script>[\s\S]*?<\/script>/g, ""));
   window.document.documentElement.dataset["locale"] = locale;
   const store = new Map(files.map((one, n) => [one.file, { text: cardText(one), modified: 1000 + n }]));
@@ -37,8 +37,8 @@ function page(files: Card[], locale: "zh" | "en" = "zh") {
     write: async (file: string, text: string) => { asked.push(`write ${file}`); const one = { text, modified: (store.get(file)?.modified ?? 0) + 1 }; store.set(file, one); return { file, modified: one.modified, size: text.length }; },
   };
   const figures: { state: string }[] = [];
-  Object.assign(window, { cxBoard, CxCharacter: { mount: (_fig: unknown, options: { state: string }) => { figures.push(options); } } });
-  new Function("window", "document", "CSS", "setInterval", "queueMicrotask", scripts[1]!)(window, window.document, window.CSS, () => 0, (run: () => void) => queueMicrotask(run));
+  Object.assign(window, { cxBoard, ...(figure ? { CxCharacter: { mount: (fig: { append(node: unknown): void }, options: { state: string }) => { figures.push(options); fig.append(window.document.createElement("svg")); } } } : {}) });
+  new Function("window", "document", "CSS", "setInterval", "queueMicrotask", scripts[0]!)(window, window.document, window.CSS, () => 0, (run: () => void) => queueMicrotask(run));
   const hear = async (name: string) => { for (const one of heard.get(name) ?? []) one(); await settle(); };
   const change = async (one: Card) => { store.set(one.file, { text: cardText(one), modified: (store.get(one.file)?.modified ?? 0) + 1 }); await hear("files"); };
   return { document: window.document, window, store, asked, figures, hear, change };
@@ -159,4 +159,18 @@ it("says its words in the board's language and changes them when the board's lan
   p.document.documentElement.dataset["locale"] = "en";
   await p.hear("context");
   expect([p.document.title, p.document.documentElement.lang, p.document.querySelector(".hc-line")?.textContent]).toEqual(["Helpers", "en", "Paused"]);
+});
+
+it("draws cx's figure in each face where the board hands it, and leaves the face's place empty where it does not, the card standing as it is", async () => {
+  const cards = [card("a-subagent-1.md", { name: "竞品对比" }), card("b-subagent-2.md", { name: "评论汇总", face: 1, state: "done", ended: T0 + 60_000, took: 60 })];
+  const faces = (document: Window["document"]) => [...document.querySelectorAll(".hc-card")].map((one) => [one.querySelector(".hc-face")?.getAttribute("data-face"), one.querySelector(".hc-fig")?.childElementCount, one.querySelector(".hc-name")?.textContent]);
+  const handed = page(cards);
+  await settle();
+  expect(faces(handed.document)).toEqual([["lake-rust", 1, "竞品对比"], ["rust-sand", 1, "评论汇总"]]);
+  const none = page(cards, "zh", false);
+  await settle();
+  expect(faces(none.document)).toEqual([["lake-rust", 0, "竞品对比"], ["rust-sand", 0, "评论汇总"]]);
+  expect(none.figures).toEqual([]);
+  // The page carries no figure of its own.
+  expect(readFileSync(join(ROOT, "page", "helpers.html"), "utf8")).not.toMatch(/CxCharacter\s*=|function \(root, factory\)/);
 });
