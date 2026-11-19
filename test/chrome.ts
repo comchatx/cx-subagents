@@ -68,7 +68,8 @@ export async function chrome(path: string, width = 800, height = 600) {
         await on("Input.dispatchKeyEvent", { type: "keyUp", key });
         return;
       }
-      await on("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+      // Enter types a return, as a keyboard's does, which is what presses a button.
+      await on("Input.dispatchKeyEvent", { type: key === "Enter" ? "keyDown" : "rawKeyDown", key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code, ...(key === "Enter" ? { text: "\r", unmodifiedText: "\r" } : {}) });
       await on("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
     },
     close: async (): Promise<void> => {

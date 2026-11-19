@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it } from "vitest";
-import boardCardsDefault, { boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, personDir, readCard, STARTED, TAB } from "../extensions/board-cards.js";
+import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, LISTS_MAX_BYTES, personDir, readCard, STARTED, TAB, withArrival, type Card } from "../extensions/board-cards.js";
 
 const scratches: string[] = [];
 const sessions: (() => void)[] = [];
@@ -337,6 +337,102 @@ it("cuts a card's words where the whole file would pass what the board reads", (
   expect(Buffer.byteLength(raw)).toBeLessThanOrEqual(CARD_MAX_BYTES);
   expect(raw.endsWith("…\n")).toBe(true);
   expect(readCard("x-subagent-r.md", raw)).toMatchObject({ name: "long", face: 3, state: "working" });
+});
+
+it("lists what a helper wrote and read as each of the four tools' calls ends well, each once, first first, while it works", async () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  const card = () => s.card("20261105-093000-subagent-run-1.md");
+  const call = (id: string, toolName: string, args: Record<string, unknown>, isError = false) => {
+    run.event({ type: "tool_execution_start", toolCallId: id, toolName, args });
+    run.event({ type: "tool_execution_end", toolCallId: id, toolName, result: {}, isError });
+  };
+  call("t1", "write", { path: "reports/rivals.md", content: "#" });
+  await eventually(card, (one) => one?.files?.length === 1);
+  call("t2", "fetch_content", { urls: ["https://www.amazon.com/dp/B0EXAMPLE1", "https://sellercentral.amazon.com/help"] });
+  call("t3", "read", { path: `${s.cwd}/data/orders.csv` });
+  call("t4", "edit", { path: "./reports/rivals.md", edits: [] });
+  call("t5", "write", { path: "reports/fail.md" }, true);
+  call("t6", "bash", { command: "echo hi > reports/by-command.md" });
+  call("t7", "read", { path: "/etc/hosts" });
+  call("t8", "fetch_content", { url: "https://www.amazon.com/dp/B0EXAMPLE1" });
+  call("t9", "write", { path: "reports/prices.csv" });
+  const now = await eventually(card, (one) => one?.files?.length === 2);
+  expect([now?.state, now?.files, now?.reads]).toEqual(["working", ["reports/rivals.md", "reports/prices.csv"], ["https://www.amazon.com/dp/B0EXAMPLE1", "https://sellercentral.amazon.com/help", "data/orders.csv"]]);
+  // A call cut by the run's end has no end line, and lists nothing.
+  run.event({ type: "tool_execution_start", toolCallId: "t10", toolName: "write", args: { path: "reports/cut.md" } });
+  s.complete({ id: "run-1", state: "stopped", stopped: true, durationMs: 1000 });
+  expect([card()?.state, card()?.files, card()?.reads?.length]).toEqual(["stopped", ["reports/rivals.md", "reports/prices.csv"], 3]);
+});
+
+it("reads the run's log once more at its end, so a call that ended just before is on the card", () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "write", args: { path: "out.md" } });
+  run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "write", isError: false });
+  s.complete({ id: "run-1", state: "complete", success: true, durationMs: 1000 });
+  expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ state: "done", files: ["out.md"] });
+});
+
+it("takes from the helper's session file what it wrote and read after its log stopped at its bound", () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "write", args: { path: "first.md" } });
+  run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "write" });
+  run.event({ type: "subagent.events.truncated", maxBytes: 52428800 });
+  const said = (message: Record<string, unknown>) => JSON.stringify({ type: "message", message });
+  const sessionFile = join(run.dir, "child.jsonl");
+  writeFileSync(sessionFile, [
+    JSON.stringify({ type: "session", cwd: s.cwd }),
+    said({ role: "assistant", content: [{ type: "toolCall", id: "t1", name: "write", arguments: { path: "first.md" } }, { type: "toolCall", id: "t2", name: "write", arguments: { path: "late.md" } }] }),
+    said({ role: "toolResult", toolCallId: "t1", toolName: "write", isError: false }),
+    said({ role: "toolResult", toolCallId: "t2", toolName: "write", isError: false }),
+    said({ role: "assistant", content: [{ type: "toolCall", id: "t3", name: "fetch_content", arguments: { url: "https://example.com/a" } }, { type: "toolCall", id: "t4", name: "write", arguments: { path: "failed.md" } }] }),
+    said({ role: "toolResult", toolCallId: "t3", toolName: "fetch_content", isError: false }),
+    said({ role: "toolResult", toolCallId: "t4", toolName: "write", isError: true }),
+  ].join("\n"));
+  s.complete({ id: "run-1", state: "complete", success: true, durationMs: 1000, results: [{ sessionFile }] });
+  expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ files: ["first.md", "late.md"], reads: ["https://example.com/a"] });
+});
+
+it("reads a name whole where a chunk's edge cuts one of its characters", () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  // A line long enough that the path's 库 starts one byte before the follower's first 1 MiB chunk ends.
+  const start = (pad: string) => `${JSON.stringify({ type: "x", pad })}\n${JSON.stringify({ type: "tool_execution_start", toolCallId: "t1", toolName: "write", args: { path: "reports/库存.md" } })}\n`;
+  const at = Buffer.from(start("")).indexOf(Buffer.from("库"));
+  writeFileSync(join(run.dir, "events.jsonl"), `${start("a".repeat((1 << 20) - 1 - at))}${JSON.stringify({ type: "tool_execution_end", toolCallId: "t1", toolName: "write" })}\n`);
+  expect(readFileSync(join(run.dir, "events.jsonl")).subarray((1 << 20) - 1, (1 << 20) + 2).toString()).toBe("库");
+  s.call("c1", { task: "stock" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  expect(s.card("20261105-093000-subagent-run-1.md")?.files).toEqual(["reports/库存.md"]);
+});
+
+it("names a file by its path in cx's folder, and lists none outside it nor any address that is not a web page's", () => {
+  expect(arrival("write", { path: "a/b.md" }, "/tenant")).toEqual({ files: ["a/b.md"], reads: [] });
+  expect(arrival("edit", { path: "/tenant/a/../c.md" }, "/tenant")).toEqual({ files: ["c.md"], reads: [] });
+  expect(arrival("read", { path: "@notes/x.md" }, "/tenant")).toEqual({ files: [], reads: ["notes/x.md"] });
+  expect(arrival("read", { path: "../etc/passwd" }, "/tenant")).toEqual({ files: [], reads: [] });
+  expect(arrival("write", { path: "/tenant" }, "/tenant")).toEqual({ files: [], reads: [] });
+  expect(arrival("fetch_content", { url: " https://a.example/x ", urls: ["file:///etc/hosts", "http://b.example", 4] }, "/tenant")).toEqual({ files: [], reads: ["https://a.example/x", "http://b.example"] });
+  expect(arrival("bash", { command: "ls" }, "/tenant")).toEqual({ files: [], reads: [] });
+});
+
+it("keeps a card's lists through its file and within their bound, the earliest kept", () => {
+  const base: Card = { file: "x-subagent-r.md", name: "n", face: 0, state: "working", at: T0, run: "r", task: "t" };
+  const one = withArrival(base, { files: ["a.md", "a.md"], reads: ["https://a.example/1"] });
+  expect(readCard(one.file, cardText(one))).toMatchObject({ files: ["a.md"], reads: ["https://a.example/1"] });
+  const long = Array.from({ length: 2000 }, (_, n) => `https://example.com/${"p".repeat(40)}/${n}`);
+  const full = withArrival(base, { files: [], reads: long });
+  expect(full.reads?.[0]).toBe(long[0]);
+  expect(Buffer.byteLength(JSON.stringify(full.reads))).toBeLessThanOrEqual(LISTS_MAX_BYTES);
+  expect(Buffer.byteLength(cardText(full))).toBeLessThanOrEqual(CARD_MAX_BYTES);
 });
 
 it("loads as pi loads it: the default export takes pi's events", () => {
