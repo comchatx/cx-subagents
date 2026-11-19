@@ -1,178 +1,235 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it } from "vitest";
-import boardCardsDefault, { boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endWords, STARTED, TIMED_OUT_WORDS } from "../extensions/board-cards.js";
-import { readEntry } from "./fixtures/board-reader.js";
+import boardCardsDefault, { boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, personDir, readCard, STARTED, TAB } from "../extensions/board-cards.js";
 
 const scratches: string[] = [];
-afterEach(() => { for (const scratch of scratches.splice(0)) rmSync(scratch, { recursive: true, force: true }); });
+const sessions: (() => void)[] = [];
+afterEach(() => {
+  for (const end of sessions.splice(0)) end();
+  for (const scratch of scratches.splice(0)) rmSync(scratch, { recursive: true, force: true });
+});
 
 type Handler = (event: Record<string, unknown>, ctx: { cwd: string }) => void;
+const T0 = Date.UTC(2026, 10, 5, 9, 30, 0);
 
-/** The extension on a bus of its own, as pi hands it one: pi's events by name, and the session's bus pi-subagents emits on. */
-function session(people: readonly string[] = ["acct_1"], clock = { at: Date.UTC(2026, 10, 5, 9, 30, 0) }) {
+/**
+ * The extension on a bus of its own, as pi hands it one: pi's events by name, and the session's bus pi-subagents emits on. `facts` is
+ * what the computer hands the person's pi (`CX_PERSON_FACTS`), with `BOARD` standing for the board's directory under the session's.
+ */
+function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) => string) {
   const cwd = mkdtempSync(join(tmpdir(), "cx-subagents-cards-"));
   scratches.push(cwd);
-  for (const person of people) mkdirSync(join(cwd, "board", person, "todo"), { recursive: true });
+  for (const person of people) mkdirSync(join(cwd, "board", person), { recursive: true });
+  const clock = { at: T0 };
   const handlers = new Map<string, Handler[]>();
   const bus = new EventEmitter();
   const pi = {
     on: (name: string, handler: Handler) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
     events: { on: (channel: string, handler: (data: unknown) => void) => { bus.on(channel, handler); return () => bus.off(channel, handler); }, emit: (channel: string, data: unknown) => bus.emit(channel, data) },
   } as unknown as ExtensionAPI;
+  const before = process.env["CX_PERSON_FACTS"];
+  if (facts === undefined) delete process.env["CX_PERSON_FACTS"]; else process.env["CX_PERSON_FACTS"] = facts(cwd);
   boardCards(pi, { now: () => clock.at });
   const fire = (name: string, event: Record<string, unknown>) => { for (const handler of handlers.get(name) ?? []) handler(event, { cwd }); };
-  const todo = join(cwd, "board", people[0] ?? "none", "todo");
+  sessions.push(() => { fire("session_shutdown", { type: "session_shutdown" }); if (before === undefined) delete process.env["CX_PERSON_FACTS"]; else process.env["CX_PERSON_FACTS"] = before; });
+  const person = join(cwd, "board", people[0] ?? "none");
+  const tab = join(person, TAB);
   return {
-    cwd, clock, todo,
+    cwd, clock, person, tab,
     start: () => fire("session_start", { type: "session_start", reason: "startup" }),
     call: (toolCallId: string, input: Record<string, unknown>, toolName = "subagent") => fire("tool_call", { type: "tool_call", toolCallId, toolName, input }),
     result: (toolCallId: string) => fire("tool_result", { type: "tool_result", toolCallId }),
     started: (data: Record<string, unknown>) => bus.emit(STARTED, data),
     complete: (data: Record<string, unknown>) => bus.emit(COMPLETE, data),
-    files: (place = todo) => readdirSync(place).sort(),
-    read: (name: string, place = todo) => readEntry(name, "todo", readFileSync(join(place, name), "utf8"), 0),
+    files: (place = tab) => (existsSync(place) ? readdirSync(place).sort() : []),
+    card: (name: string, place = tab) => readCard(name, readFileSync(join(place, name), "utf8")),
   };
 }
 
-it("names a card by its start and run id, and reads back as a finding with the task's first line, its start and its words", () => {
-  const s = session();
-  s.start();
-  s.call("c1", { agent: "delegate", task: "\n  Check   the US titles  \nthen the UK." });
-  s.started({ id: "run-1", toolCallId: "c1", agent: "delegate" });
-  expect(s.files()).toEqual(["20261105-093000-subagent-run-1.md"]);
-  expect(s.read("20261105-093000-subagent-run-1.md")).toMatchObject({ readable: true, kind: "finding", title: "Check the US titles", at: s.clock.at, body: "  Check   the US titles  \nthen the UK.\n" });
-});
+/** A run's folder as pi-subagents keeps it: its status and the events it appends. */
+function runDir(cwd: string, run: string) {
+  const dir = join(cwd, "runs", run);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "status.json"), JSON.stringify({ runId: run, state: "running" }));
+  writeFileSync(join(dir, "events.jsonl"), "");
+  return { dir, event: (line: Record<string, unknown>) => appendFileSync(join(dir, "events.jsonl"), `${JSON.stringify(line)}\n`) };
+}
 
-it("overwrites the card of a run id that starts again, under its first name, with the new start's time and words", () => {
-  const s = session();
-  s.call("c1", { task: "first ask" });
-  s.started({ id: "run-1", toolCallId: "c1" });
-  s.result("c1");
-  s.clock.at += 60_000;
-  s.call("c2", { task: "second ask" });
-  s.started({ id: "run-1", toolCallId: "c2" });
-  expect(s.files()).toEqual(["20261105-093000-subagent-run-1.md"]);
-  expect(s.read("20261105-093000-subagent-run-1.md")).toMatchObject({ title: "second ask", at: s.clock.at, body: "second ask\n" });
-});
-
-it("finds a run's card on the board by its id after pi reloads, and keeps its name, title and start", () => {
-  const s = session();
-  s.start();
-  writeFileSync(join(s.todo, "20261105-080000-subagent-run-9.md"), cardText({ name: "x", title: "Earlier \"quoted\" ask", at: Date.UTC(2026, 10, 5, 8) }, "the ask"));
-  s.complete({ id: "run-9", results: [{ agent: "delegate", output: "found it" }] });
-  expect(s.files()).toEqual(["20261105-080000-subagent-run-9.md"]);
-  expect(s.read("20261105-080000-subagent-run-9.md")).toMatchObject({ readable: true, title: "Earlier \"quoted\" ask", at: Date.UTC(2026, 10, 5, 8), body: "found it\n" });
-});
-
-it("moves nothing: a card the seller marked read stays in done/, and the result is a card again in todo/ under its name", () => {
-  const s = session();
-  mkdirSync(join(s.todo, "..", "done"));
-  s.call("c1", { task: "look" });
-  s.started({ id: "run-1", toolCallId: "c1" });
-  const [name] = s.files();
-  renameSync(join(s.todo, name!), join(s.todo, "..", "done", name!));
-  s.complete({ runId: "run-1", results: [{ output: "result" }] });
-  expect(s.files()).toEqual([name]);
-  expect(s.files(join(s.todo, "..", "done"))).toEqual([name]);
-  expect(s.read(name!)).toMatchObject({ title: "look", body: "result\n" });
-  // Not known to this session and not on the board in either place: a card of its own, under the time it ended.
-  const t = session();
-  t.start();
-  mkdirSync(join(t.todo, "..", "done"));
-  writeFileSync(join(t.todo, "..", "done", "20261105-070000-subagent-run-2.md"), "no front matter");
-  t.complete({ id: "run-2", agent: "scout", summary: "scout:\nseen" });
-  expect(t.read("20261105-070000-subagent-run-2.md")).toMatchObject({ readable: true, title: "scout", at: s.clock.at, body: "scout:\nseen\n" });
-  t.complete({ id: "run-3", agent: "scout", summary: "seen" });
-  expect(t.read("20261105-093000-subagent-run-3.md")).toMatchObject({ title: "scout", body: "seen\n" });
-});
-
-it("takes the one running call for a start that names none, each step's words for a chain or a parallel run, and the agent's name with no words", () => {
-  const s = session();
-  s.call("c1", { tasks: [{ agent: "a", task: "US titles" }, { agent: "b", task: "UK titles" }] });
-  s.call("other", { command: "ls" }, "bash");
-  s.started({ id: "par", agent: "a" });
-  expect(s.read(s.files().find((one) => one.includes("par"))!)).toMatchObject({ title: "US titles", body: "US titles\n\nUK titles\n" });
-  s.call("c2", { chain: [{ task: "" }, { task: "step two" }] });
-  s.started({ id: "chain" });
-  // Two calls running and no call named: neither is taken.
-  expect(s.read(s.files().find((one) => one.includes("chain"))!)).toMatchObject({ title: "subagent", body: "" });
-  s.result("c1");
-  s.started({ id: "chain2", agent: "scout" });
-  expect(s.read(s.files().find((one) => one.includes("chain2"))!)).toMatchObject({ title: "step two" });
-  s.result("c2");
-  s.started({ id: "lone", agent: "scout" });
-  expect(s.read(s.files().find((one) => one.includes("lone"))!)).toMatchObject({ title: "scout", body: "" });
-  s.call("c3", { action: "status" });
-  s.started({ id: "odd/id with spaces", toolCallId: "c3" });
-  expect(s.files().find((one) => one.includes("odd"))).toBe("20261105-093000-subagent-odd-id-with-spaces.md");
-});
-
-it("keeps the words of the latest 64 calls for a start that names its call", () => {
-  const s = session();
-  for (let n = 0; n < 65; n++) { s.call(`c${n}`, { task: `ask ${n}` }); s.result(`c${n}`); }
-  s.started({ id: "old", toolCallId: "c0", agent: "scout" });
-  s.started({ id: "new", toolCallId: "c1", agent: "scout" });
-  expect(s.read(s.files().find((one) => one.includes("old"))!)).toMatchObject({ title: "scout" });
-  expect(s.read(s.files().find((one) => one.includes("new"))!)).toMatchObject({ title: "ask 1" });
-});
-
-it("writes no card where the board is not one person's: none, two, or a name the board does not take; nor for an event with no id", () => {
-  for (const people of [[], ["acct_1", "acct_2"], [".hidden"]]) {
-    const s = session(people);
-    s.call("c1", { task: "look" });
-    s.started({ id: "run-1", toolCallId: "c1" });
-    s.complete({ id: "run-1", summary: "done" });
-    const written = people.length === 0 ? [] : people.flatMap((person) => readdirSync(join(s.cwd, "board", person, "todo")));
-    expect(written).toEqual([]);
+async function eventually<T>(read: () => T, test: (value: T) => boolean, boundMs = 5_000): Promise<T> {
+  const until = Date.now() + boundMs;
+  for (;;) {
+    const value = read();
+    if (test(value)) return value;
+    if (Date.now() > until) throw new Error(`not so within ${boundMs} ms: ${JSON.stringify(value)}`);
+    await new Promise((done) => setTimeout(done, 25));
   }
+}
+
+it("puts a helper in its own tab at its start: at work, the task's first line its name, the first face, the task as its words", () => {
   const s = session();
-  s.started({ toolCallId: "c1" });
-  s.complete({ summary: "done" });
-  expect(s.files()).toEqual([]);
+  s.start();
+  s.call("c1", { agent: "helper", task: "\n  Check   the US titles  \nthen the UK." });
+  s.started({ id: "run-1", toolCallId: "c1", agent: "helper", asyncDir: "/nowhere/run-1" });
+  expect(s.files()).toEqual(["20261105-093000-subagent-run-1.md"]);
+  expect(s.card("20261105-093000-subagent-run-1.md")).toEqual({
+    file: "20261105-093000-subagent-run-1.md", name: "Check the US titles", face: 0, state: "working", at: T0, run: "run-1", dir: "/nowhere/run-1", task: "\n  Check   the US titles  \nthen the UK.",
+  });
+  // Nothing goes to the person's to-do places any more.
+  expect(readdirSync(s.person)).toEqual([TAB]);
 });
 
-it("makes the person's todo/ when the board has the person and not yet the place, and leaves no partial file", () => {
-  const s = session([]);
-  mkdirSync(join(s.cwd, "board", "acct_1"), { recursive: true });
-  writeFileSync(join(s.cwd, "board", "README"), "a file is no person");
-  s.call("c1", { task: "look" });
+it("gives each new helper the next face, one after the highest a card holds", () => {
+  const s = session();
+  for (const [n, run] of ["run-a", "run-b", "run-c"].entries()) {
+    s.clock.at = T0 + n * 1000;
+    s.call(`c${n}`, { task: run });
+    s.started({ id: run, toolCallId: `c${n}` });
+  }
+  expect(s.files().map((name) => s.card(name)?.face)).toEqual([0, 1, 2]);
+});
+
+it("ends a card as pi-subagents' result says: done with when and how long, at its time limit, stopped, paused, or failed", () => {
+  expect(endState({ state: "complete", success: true })).toBe("done");
+  expect(endState({ success: true })).toBe("done");
+  expect(endState({ state: "failed", timedOut: true })).toBe("timeout");
+  expect(endState({ state: "stopped", stopped: true })).toBe("stopped");
+  expect(endState({ state: "paused" })).toBe("paused");
+  expect(endState({ state: "failed" })).toBe("failed");
+  expect(endState({ state: "rejected" })).toBe("failed");
+  const s = session();
+  s.call("c1", { task: "compare rivals" });
   s.started({ id: "run-1", toolCallId: "c1" });
-  expect(readdirSync(join(s.cwd, "board", "acct_1", "todo"))).toEqual(["20261105-093000-subagent-run-1.md"]);
+  s.clock.at = T0 + 300_000;
+  s.complete({ id: "run-1", state: "complete", success: true, durationMs: 245_400, results: [{ output: "words" }] });
+  expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ name: "compare rivals", face: 0, state: "done", at: T0, ended: T0 + 300_000, took: 245, task: "compare rivals" });
 });
 
-it("cuts the words so the whole card stays within what the board reads, at a character, and the title to one line of 200", () => {
+it("keeps the name the seller wrote on the card, and the card's face, when the package rewrites it", () => {
   const s = session();
-  const long = `${"标".repeat(150)}${"x".repeat(100)}\n${"长".repeat(20_000)}`;
-  s.call("c1", { task: long });
-  s.started({ id: "big", toolCallId: "c1" });
-  const [name] = s.files();
-  const raw = readFileSync(join(s.todo, name!), "utf8");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1" });
+  const file = join(s.tab, "20261105-093000-subagent-run-1.md");
+  writeFileSync(file, readFileSync(file, "utf8").replace(/^title: .*$/m, `title: ${JSON.stringify("竞品对比")}`));
+  s.complete({ id: "run-1", state: "complete", success: true, durationMs: 1000 });
+  expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ name: "竞品对比", face: 0, state: "done" });
+});
+
+it("says a helper waits for cx's answer while it asks cx, and is at work again once the answer comes", async () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  const state = () => s.card("20261105-093000-subagent-run-1.md")?.state;
+  run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "read", args: { path: "a.csv" } });
+  run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "read" });
+  // A word to cx that waits for nothing: a progress note.
+  run.event({ type: "tool_execution_start", toolCallId: "t2", toolName: "contact_supervisor", args: { reason: "progress_update", message: "half way" } });
+  run.event({ type: "tool_execution_end", toolCallId: "t2", toolName: "contact_supervisor" });
+  await new Promise((done) => setTimeout(done, 200));
+  expect(state()).toBe("working");
+  run.event({ type: "tool_execution_start", toolCallId: "t3", toolName: "contact_supervisor", args: { reason: "need_decision", message: "with shipping?" } });
+  await eventually(state, (one) => one === "waiting");
+  // Half a line is read once its rest is written.
+  appendFileSync(join(run.dir, "events.jsonl"), '{"type":"tool_execution_end","toolCallId":"t3",');
+  await new Promise((done) => setTimeout(done, 200));
+  expect(state()).toBe("waiting");
+  appendFileSync(join(run.dir, "events.jsonl"), '"toolName":"contact_supervisor"}\n');
+  await eventually(state, (one) => one === "working");
+  // An ask through pi-intercom waits alike.
+  run.event({ type: "tool_execution_start", toolCallId: "t4", toolName: "intercom", args: { action: "ask", message: "which store?" } });
+  await eventually(state, (one) => one === "waiting");
+  s.complete({ id: "run-1", state: "complete", success: true, durationMs: 1000 });
+  expect(state()).toBe("done");
+  // Its end stops the reading: a line after it changes nothing.
+  run.event({ type: "tool_execution_end", toolCallId: "t4", toolName: "intercom" });
+  await new Promise((done) => setTimeout(done, 200));
+  expect(state()).toBe("done");
+});
+
+it("goes on reading a run at work from where its file is when a new session starts", async () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  // The session ends; pi-subagents' runner goes on, and the next session in the same tree reads the run its card names.
+  for (const end of sessions.splice(0)) end();
+  const handlers = new Map<string, Handler[]>();
+  boardCards({ on: (name: string, handler: Handler) => handlers.set(name, [...(handlers.get(name) ?? []), handler]), events: { on: () => () => {} } } as unknown as ExtensionAPI);
+  const fire = (name: string) => { for (const handler of handlers.get(name) ?? []) handler({ type: name }, { cwd: s.cwd }); };
+  fire("session_start");
+  sessions.push(() => fire("session_shutdown"));
+  run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "contact_supervisor", args: { reason: "interview_request" } });
+  await eventually(() => s.card("20261105-093000-subagent-run-1.md")?.state, (one) => one === "waiting");
+});
+
+it("moves the package's earlier cards into the tab once, ended at their file's last write, and leaves the seller's own files", () => {
+  const s = session();
+  const todo = join(s.person, "todo"), done = join(s.person, "done");
+  mkdirSync(todo); mkdirSync(done);
+  const old = (place: string, name: string, words: string, at: number, modified: number) => {
+    writeFileSync(join(place, name), `---\nkind: finding\ntitle: ${JSON.stringify(words.split("\n")[0])}\nat: ${new Date(at).toISOString()}\n---\n\n${words}\n`);
+    utimesSync(join(place, name), modified / 1000, modified / 1000);
+  };
+  old(todo, "20261101-080000-subagent-r1.md", "B0A and B0C have thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
+  old(done, "20261102-080000-subagent-r2.md", "超时\n\nB0A checked so far.", Date.UTC(2026, 10, 2, 8), Date.UTC(2026, 10, 2, 8, 30));
+  writeFileSync(join(done, "my-notes.md"), "mine");
+  s.start();
+  expect(s.files()).toEqual(["20261101-080000-subagent-r1.md", "20261102-080000-subagent-r2.md"]);
+  expect(s.card("20261101-080000-subagent-r1.md")).toMatchObject({ name: "B0A and B0C have thin titles.", face: 0, state: "done", at: Date.UTC(2026, 10, 1, 8), ended: Date.UTC(2026, 10, 1, 8, 4), took: 240, run: "r1" });
+  expect(s.card("20261102-080000-subagent-r2.md")).toMatchObject({ name: "超时", face: 1, state: "timeout", took: 1800, run: "r2" });
+  // The empty `todo/` is gone; `done/` keeps the seller's file.
+  expect(readdirSync(s.person).sort()).toEqual(["done", TAB]);
+  expect(readdirSync(done)).toEqual(["my-notes.md"]);
+  // A second start finds nothing to move.
+  s.start();
+  expect(s.files()).toHaveLength(2);
+});
+
+it("marks off, when a session starts, a card at work whose run's folder went with cx's computer, and only that one", () => {
+  const s = session();
+  const kept = runDir(s.cwd, "run-kept");
+  s.call("c1", { task: "kept" });
+  s.started({ id: "run-kept", toolCallId: "c1", asyncDir: kept.dir });
+  s.result("c1");
+  s.clock.at += 1000;
+  s.call("c2", { task: "lost" });
+  s.started({ id: "run-lost", toolCallId: "c2", asyncDir: join(s.cwd, "runs", "run-lost") });
+  s.result("c2");
+  s.clock.at += 1000;
+  s.call("c3", { task: "ended" });
+  s.started({ id: "run-ended", toolCallId: "c3", asyncDir: join(s.cwd, "runs", "run-ended") });
+  s.complete({ id: "run-ended", state: "complete", success: true, durationMs: 10 });
+  s.start();
+  expect(s.files().map((name) => [s.card(name)?.name, s.card(name)?.state])).toEqual([["kept", "working"], ["lost", "off"], ["ended", "done"]]);
+});
+
+it("writes on the board the computer names for the asker, where it holds several people's, and on none where nothing names one", () => {
+  const unnamed = session(["acct_1", "acct_2"]);
+  unnamed.call("c1", { task: "no board named" });
+  unnamed.started({ id: "run-1", toolCallId: "c1" });
+  expect(["acct_1", "acct_2"].map((person) => readdirSync(join(unnamed.cwd, "board", person)))).toEqual([[], []]);
+  const named = session(["acct_1", "acct_2"], (cwd) => `The person in this session is acct_2. Their board directory is ${join(cwd, "board", "acct_2")}/.`);
+  named.call("c1", { task: "the asker's" });
+  named.started({ id: "run-1", toolCallId: "c1" });
+  expect(readdirSync(join(named.cwd, "board", "acct_2", TAB))).toEqual(["20261105-093000-subagent-run-1.md"]);
+  expect(readdirSync(join(named.cwd, "board", "acct_1"))).toEqual([]);
+  expect(personDir("/tenant", "The person in this session is acct_9. Their board directory is /tenant/board/acct_9/.")).toBe("/tenant/board/acct_9");
+});
+
+it("cuts a card's words where the whole file would pass what the board reads", () => {
+  const card = { file: "x-subagent-r.md", name: "long", face: 3, state: "working" as const, at: T0, run: "r", task: "字".repeat(20_000) };
+  const raw = cardText(card);
   expect(Buffer.byteLength(raw)).toBeLessThanOrEqual(CARD_MAX_BYTES);
   expect(raw.endsWith("…\n")).toBe(true);
-  expect(raw).not.toContain("\uFFFD");
-  const card = s.read(name!);
-  if (!card.readable) throw new Error("unreadable");
-  expect(card.title).toBe(`${"标".repeat(150)}${"x".repeat(49)}…`);
+  expect(readCard("x-subagent-r.md", raw)).toMatchObject({ name: "long", face: 3, state: "working" });
 });
 
-it("says a run's end in the helper's own words, each of several under its agent, 「超时」 with what it had, and pi-subagents' summary otherwise", () => {
-  expect(endWords({ results: [{ agent: "a", output: "  found  " }], summary: "a:\nfound" })).toBe("found");
-  expect(endWords({ results: [{ agent: "a", output: "", error: "Model refused." }], summary: "a:\nModel refused." })).toBe("Model refused.");
-  expect(endWords({ results: [{ agent: "a", output: "one" }, { agent: "b", output: "" }, { agent: "c", output: "three" }] })).toBe("a:\none\n\nc:\nthree");
-  expect(endWords({ summary: "Paused after interrupt." })).toBe("Paused after interrupt.");
-  expect(endWords({ error: "Subagent process terminated by signal." })).toBe("Subagent process terminated by signal.");
-  expect(endWords({})).toBe("");
-  expect(endWords({ timedOut: true, results: [{ agent: "a", output: "had this\n\nRecovery summary:\n- termination: timed-out", error: "Subagent timed out." }] })).toBe(`${TIMED_OUT_WORDS}\n\nhad this`);
-  expect(endWords({ timedOut: true, results: [{ agent: "a", output: "", error: "Subagent timed out." }], summary: "Subagent timed out." })).toBe(TIMED_OUT_WORDS);
-  expect(endWords({ timedOut: true, summary: "Subagent timed out." })).toBe(TIMED_OUT_WORDS);
-});
-
-it("is pi's extension by its default export", () => {
+it("loads as pi loads it: the default export takes pi's events", () => {
   const seen: string[] = [];
-  boardCardsDefault({ on: (name: string) => { seen.push(name); }, events: { on: (name: string) => { seen.push(name); return () => undefined; } } } as unknown as ExtensionAPI);
-  expect(seen.sort()).toEqual([COMPLETE, STARTED, "session_start", "tool_call", "tool_result"].sort());
+  boardCardsDefault({ on: (name: string) => seen.push(name), events: { on: (name: string) => seen.push(name) } } as unknown as ExtensionAPI);
+  expect(seen.sort()).toEqual([COMPLETE, STARTED, "session_shutdown", "session_start", "tool_call", "tool_result"].sort());
 });

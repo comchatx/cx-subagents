@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- The board tab 帮手 / Helpers, `page/helpers.html`, declared in `comchatx.board`: one card a helper, with its face, its name, its state line and how long it has run, in three groups, in progress, completed and not finished, newest first. The seller renames a helper by pressing its name.
+- The card moves from `todo/` to `board/<person>/帮手/`, with `kind: "helper"` and a state: working, waiting for cx's answer, done, failed, stopped at the 30-minute limit, stopped, or off when cx's computer was stopped under the run.
+- At each session's start the package's own earlier cards move out of `todo/` and `done/` into `帮手/`.
+- The person is the one the session names, where a computer holds more than one board.
+- The tests run against pi-subagents 0.89.1 on pi 1.5.2, and `comchatx.builds` names 0.89.1 as tested.
+
 ## 0.3.5
 
 - The README, in English and Chinese, gains a paragraph after the first, signed on 2026-11-19: what a helper's card does not list, and where the data's cost is shown.

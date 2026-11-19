@@ -1,0 +1,1545 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>帮手</title>
+<!--
+  The package's own page on the board, the tab 帮手 / Helpers, inside the board's frame. A card is one helper, read from its file in the
+  tab: a face the package gives it, a name the seller can change, and a line that says how it stands. Helpers stand in three groups, at
+  work, done and not finished: one under another in a narrow column, side by side as the board is dragged wider.
+  The board hands the page its theme's values and the ready-made elements (`class="kit"`). What those do not give is in the style below:
+  a card's state, a face and its colours, and the groups. The theme's values the board does not hand a page — the outline of what ended
+  with no result, and cx's own colours the face is drawn in — are carried here, as the app's theme names them.
+-->
+<style>
+  :root, [data-theme="light"] {
+    --bad-line: #D8A398;
+    --cx-line: #1B2420; --cx-forest: #1E4A38; --cx-forest-shade: #1E3E31; --cx-sand: #BE9257; --cx-sand-shade: #866D46; --cx-sand-light: #EBD9A9;
+    --cx-chalk: #F3EFE4; --cx-paper: #F1E7D7; --cx-quiet: #5E635E; --cx-accent: #1B2420; --cx-bad: #A43C33;
+    --helper-lake: #2B85AA; --helper-plum: #792F67; --helper-lilac: #9478C4; --helper-cobalt: #274893; --helper-jade: #0D844C; --helper-rust: #6F2A00; --helper-mauve: #846375; --helper-rose: #C1628A; --helper-olive: #848F1E;
+  }
+  [data-theme="dark"] {
+    --bad-line: #714F46;
+    --cx-line: #EDE8DC; --cx-forest: #4E8B6F; --cx-forest-shade: #3A634F; --cx-sand: #D8B183; --cx-sand-shade: #90785A; --cx-sand-light: #EBD9A9;
+    --cx-chalk: #F3EFE4; --cx-paper: #32362D; --cx-quiet: #A1A298; --cx-accent: #EDE8DC; --cx-bad: #E6867A;
+    --helper-lake: #66B6DB; --helper-plum: #AF609A; --helper-lilac: #C0AAEC; --helper-cobalt: #5077CA; --helper-jade: #72D699; --helper-rust: #B66946; --helper-mauve: #A7919C; --helper-rose: #FF99C2; --helper-olive: #A2AE44;
+  }
+  .unseen { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  #page { max-width: 40rem; margin: 0 auto; }
+  .hc-list { display: flex; flex-direction: column; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+  /* The groups: one under another; from 40rem two columns, the helpers at work in the first; from 60rem a column each. */
+  .hc-groups { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--space-6) var(--space-5); }
+  .hc-group { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+  .hc-group > h2 { margin: 0; color: var(--quiet); font-size: var(--size-small); font-weight: var(--weight-strong); line-height: var(--leading-small); }
+  @media (min-width: 40rem) {
+    #page:has(.hc-groups) { max-width: 58rem; }
+    .hc-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hc-groups[data-n="3"] { grid-template-rows: auto 1fr; }
+    .hc-groups[data-n="3"] > .hc-group:first-child { grid-row: span 2; }
+  }
+  @media (min-width: 60rem) {
+    #page:has(.hc-groups[data-n="3"]) { max-width: 88rem; }
+    .hc-groups[data-n="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none; }
+    .hc-groups[data-n="3"] > .hc-group:first-child { grid-row: auto; }
+  }
+
+  /* A card's state: a helper at work is outlined as the chat's running step is, one that ended with no result as the build outlines what failed. */
+  .hc-card { position: relative; }
+  .hc-card[data-state="working"] { border-color: var(--live-edge); }
+  .hc-card[data-state="failed"], .hc-card[data-state="timeout"], .hc-card[data-state="off"] { border-color: var(--bad-line); }
+
+  /* The head: the face, the name over the line that says how it stands. */
+  .hc-head { display: flex; align-items: flex-start; gap: var(--space-3); }
+  .hc-id { flex: 1 1 auto; min-width: 0; }
+  .hc-top { --row: calc(var(--space-7) + var(--space-2)); display: flex; align-items: flex-start; gap: var(--space-3); min-height: var(--row); }
+  .hc-name { flex: 1 1 auto; min-width: 0; margin: 0; padding-top: var(--space-2); font-size: var(--size-body); font-weight: var(--weight-strong); line-height: var(--leading-small); overflow-wrap: anywhere; }
+  .hc-name, .hc-name > button, .hc-card[data-state="working"] .hc-line { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  .hc-name:has(> button) { display: block; overflow: visible; padding-top: 0; }
+  /* Under a pointer the name takes the board's own shade behind it, as any button does, and nothing else. */
+  .hc-name > button { max-width: calc(100% + var(--space-2)); min-height: var(--row); -webkit-box-pack: center; margin-inline-start: calc(var(--space-2) * -1); padding: 0 var(--space-2); border: none; border-radius: var(--radius-small); background: none; color: inherit; font: inherit; text-align: start; overflow-wrap: anywhere; }
+  /* The name's field stands where the name stood, in the name's own box and letters, so nothing around it moves. */
+  .hc-top > .entry-field { flex: 1 1 auto; min-width: 0; height: var(--row); margin-inline-start: calc(var(--space-2) * -1 - 1px); padding: 0 var(--space-2); border-radius: var(--radius-small); font-size: var(--size-body); font-weight: var(--weight-strong); line-height: var(--leading-small); }
+  .hc-card .entry-field:focus-visible { outline: 2px solid var(--act); outline-offset: -2px; }
+
+  /* A face: cx's own figure with one ring in each of two colours, a little into the card's padding so its figure lines up with the words. */
+  .hc-face { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 3.5rem; height: 2.75rem; margin-inline-start: calc(var(--space-2) * -1); }
+  .hc-fig { display: inline-flex; --cx-forest: var(--a); --cx-forest-shade: var(--a); --cx-sand: var(--b); --cx-sand-shade: var(--b); }
+  .hc-fig > svg { display: block; }
+
+  /* The line that says how it stands, and how long at its end while it is at work. */
+  .hc-now { display: flex; align-items: baseline; gap: var(--space-4); margin: 0; color: var(--quiet); font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-line { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .hc-line > .icon { width: var(--size-small); height: var(--size-small); margin-inline-end: var(--space-2); vertical-align: -0.125em; }
+  .hc-age { flex: none; color: var(--quiet); font-size: var(--size-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .hc-card[data-state="working"] .hc-line { color: var(--ink); }
+  .hc-card[data-state="failed"] .hc-line, .hc-card[data-state="timeout"] .hc-line, .hc-card[data-state="off"] .hc-line { color: var(--bad); }
+</style>
+</head>
+<body class="kit">
+<div class="kit-page" id="page"></div>
+<script>
+// cx's figure, the app's own `src/web/cx.js` (comchatx/ComChatX at fe3787f46), carried whole: a page on the board is handed no script of the app's.
+// cx — the analyst's character, drawn from the brand mark's geometry (the promo's Cx.tsx and
+// Hands.tsx, ported without React): circle centres ±19, radius 30, stroke 15, channel 12.5; the
+// face is the almond between the two Cs, the eyes are its two inner triangles, the hands are
+// pencil lines. No dependency, no fetched asset. A classic script (works from file://) that also
+// exports for a bundler.
+//
+//   const cx = CxCharacter.mount(container, { size: 72, state: "ready" });
+//   cx.set("writing");
+//
+// With `scene: true` cx sits at a desk with an old computer to its right, drawn in perspective and turned toward cx: the
+// screen follows the state (dark while the box sleeps, lit while it runs, coming on while the page waits for its first life
+// frame, a glyph when an open was refused), and the scene reads a few more signals the page already has — the person typing,
+// a tool running, a thinking block, the idle timer's last minute, the balance — through `cx.scene.update(...)` and
+// `cx.scene.tap()`. While an answer is produced the page can send cx into the stream: `cx.scene.away(point)` takes it into
+// the stream's left margin beside the line being produced, never over the answer (a hop from the desk, a glide as the line
+// moves), `cx.scene.away(null)` hops it back to its seat; where the margin is too narrow, cx works at its desk.
+//
+// Each state is a pure function of the seconds since it was entered; a change of state blends
+// from the last drawn frame to the new state's over a third of a second. The frame loop runs only
+// while something moves: continuously in the states that work, at a low rate while cx sleeps,
+// for the length of a blink when cx is ready.
+(function (root, factory) {
+  // The global is set in every case: a bundler that reads this file as CommonJS would otherwise take the export alone.
+  root.CxCharacter = factory();
+  if (typeof module === "object" && module.exports) module.exports = root.CxCharacter;
+})(globalThis, function () {
+  "use strict";
+
+  const STATES = Object.freeze(["sleeping", "waking", "ready", "analysing", "writing"]);
+
+  // Every colour is a name of the page's theme (`site/theme.css`, the `--cx-*` names), so light and dark are the theme's to swap; what
+  // stays drawn here is the magnifier's glass and glint and the pencil's cut wood, the same on any ground.
+
+  const MARK_W = 126;
+  const VB = Object.freeze({ x: -125, y: -85, w: 250, h: 170 });
+  const LENS = "M 0 -32.33 A 37.5 37.5 0 0 0 0 32.33 A 37.5 37.5 0 0 0 0 -32.33 Z";
+  const EYE_CX = 13.6;
+  const SHOULDER = Object.freeze([55, -2]);
+  // Where the left arm comes out when both hands work at the keyboard on cx's right: from behind the body, at its right edge, lower
+  // than the right shoulder, as the far arm does when a figure turns to its desk.
+  const FAR_SHOULDER = Object.freeze([53, 15]);
+  const PALM_R = 3.8;
+  const FINGER = 6.5;
+  const HAND_STROKE = 1.7;
+  const ARM_SAMPLES = 9;
+  const LENS_AT = 25;
+  const LENS_R = 13;
+
+  // ---- the scene: cx at the origin as before, a desk under it, an old computer to its right, turned toward cx ----
+  // The computer is drawn in perspective from a level camera a little above the desk: world x to the right, y down, z toward the
+  // viewer. The plane z = 0, where cx sits and the desk's edge runs, keeps scale 1; what is nearer is drawn bigger and what is
+  // farther smaller, so the face turned toward cx narrows toward cx, the tube behind it narrows toward the back, and the top shows.
+  const SCENE_VB = Object.freeze({ x: -100, y: -92, w: 350, h: 140 });
+  const DESK_Y = 38;
+  const CAM = Object.freeze({ x: 175, y: -165, z: 300 });
+  // The monitor stands on the desk behind the keyboard, turned `theta` degrees toward cx about the upright. Each part is measured in
+  // the monitor's own frame: u along its front (to the right), v down from the desk, w out of its front. The keyboard lies in front
+  // of it at an angle of its own.
+  const MONITOR = Object.freeze({
+    x: 152, z: -32, theta: 54,
+    foot: Object.freeze({ w: 60, h: 5, d: 44, back: 12 }),
+    neck: Object.freeze({ w: 22, h: 9, d: 18, back: 14 }),
+    hood: Object.freeze({ w: 116, h: 90, d: 20 }),
+    tube: Object.freeze({ w: 68, h: 56, d: 80, drop: 6 }),
+    screen: Object.freeze({ w: 92, h: 66, top: 8, r: 7 }),
+  });
+  const KEYBOARD = Object.freeze({ x: 90, z: -30, theta: 30, w: 74, h: 5, d: 32 });
+  // A keystroke: the hand is down on the key at once, stays STRIKE_HOLD s and is back up at HOVER units over its keys by TAP s; the
+  // key it strikes lights while the hand is on it. At the composer's size a unit is a quarter of a pixel, so the lift is large.
+  const TAP = 0.2;
+  const STRIKE_HOLD = 0.06;
+  const HOVER = 15;
+  const SLIP_AT = Object.freeze([-62, -22]);
+  const LINE_H = 14;
+  const LINE_BAR = 8;
+  const LINE_CHARS = 12;
+  const LINES_MAX = 4;
+  const YAWN = 9;
+  // Away from its desk cx stands in the stream's left margin, beside the line being produced, and never over the answer: drawn up to
+  // AWAY_SCALE times its desk size where the margin has room, smaller where it has less, and not at all where it cannot hold cx at
+  // its desk size — then cx works at its desk. FOOT is the room its away poses take, in its own units from its middle: the receipt
+  // at the left, the pencil's point at the right, the thought dots above; MARGIN_GAP (px) is kept clear between the point and the text.
+  const AWAY_SCALE = 1.6;
+  const AWAY_MIN = 1;
+  const FOOT = Object.freeze({ l: 84, r: 98, t: 72, b: 42 });
+  const MARGIN_GAP = 8;
+  // Writing from the margin: the pencil held out to the line's start, its point at the right of FOOT and a little below cx's middle,
+  // where the line's letters sit; the point strokes to the left of that, never into the text, while text arrives.
+  const PEN_TIP = Object.freeze([FOOT.r, 6]);
+  const PEN_ANGLE = 14;
+  const PEN_POINT = 20.5;
+  const ARM_NATURAL = 70;
+  // cx's width, in its own units: the measure of how far a move goes.
+  const BODY_W = 113;
+  // The body goes where it is sent without overshooting (a critically damped spring, in rad/s). A move farther than HOP_FAR body
+  // widths, and any move to another kind of block farther than HOP_FROM (scene units), is a hop.
+  const BODY_OMEGA = 5;
+  const HOP_FROM = 40;
+  const HOP_FAR = 2.5;
+  /** Why an open was refused: each is one of the page's own reason lines (`blockedWords`), never a code. */
+  const REASONS = Object.freeze(["balance", "seats", "unreachable", "failed"]);
+  /** The sidebar's box readings, now the computer's power light. */
+  const DOTS = Object.freeze(["ready", "working", "starting", "asleep", "heard", "none"]);
+  /** What cx says in its bubble for a refusal it speaks to: the spike's short words; the wiring says them with the page's own strings.
+   *  A refusal for the balance or the platform's seats is not said: the glyph on the screen and the page's
+   *  status line carry it, and cx keeps its words for what a person meets in use. */
+  const WORDS = Object.freeze({
+    zh: Object.freeze({ unreachable: "无法连接", failed: "未能启动" }),
+    en: Object.freeze({ unreachable: "Can't connect", failed: "Did not start" }),
+  });
+  const SCENE_MODEL = Object.freeze({ reason: undefined, dot: "none", lang: "zh", typing: false, reading: false, receipt: false, catching: false, thinking: false, sleepy: false, low: false, heard: false, draft: 0, text: 0, key: 1 });
+
+  const SVG = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, children) => {
+    const node = document.createElementNS(SVG, tag);
+    for (const key in attrs) if (attrs[key] !== undefined) node.setAttribute(key, String(attrs[key]));
+    for (const child of children || []) node.appendChild(child);
+    return node;
+  };
+  const f = (v) => v.toFixed(2);
+
+  // The pencil look lives in the geometry: a fixed seed nudges every inner point, the same on every frame.
+  const mulberry32 = (seed) => {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+  const wobbly = (pts, seed, amp) => {
+    const rnd = mulberry32(seed);
+    const out = pts.map((p, i) => {
+      if (i === 0 || i === pts.length - 1) return p;
+      const [ax, ay] = pts[i - 1];
+      const [bx, by] = pts[i + 1];
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len = Math.hypot(dx, dy) || 1;
+      const k = (rnd() - 0.5) * 2 * amp;
+      return [p[0] + (-dy / len) * k, p[1] + (dx / len) * k];
+    });
+    if (out.length < 3) return `M ${f(out[0][0])} ${f(out[0][1])} L ${f(out[out.length - 1][0])} ${f(out[out.length - 1][1])}`;
+    let d = `M ${f(out[0][0])} ${f(out[0][1])}`;
+    for (let i = 1; i < out.length - 1; i++) d += ` Q ${f(out[i][0])} ${f(out[i][1])} ${f((out[i][0] + out[i + 1][0]) / 2)} ${f((out[i][1] + out[i + 1][1]) / 2)}`;
+    const last = out[out.length - 1];
+    return `${d} L ${f(last[0])} ${f(last[1])}`;
+  };
+  const polar = (deg, r) => [Math.cos((deg * Math.PI) / 180) * r, Math.sin((deg * Math.PI) / 180) * r];
+
+  // ---- the computer in perspective, projected once: nothing on the desk moves ----
+  const project = (p) => {
+    const k = CAM.z / (CAM.z - p[2]);
+    return [CAM.x + (p[0] - CAM.x) * k, CAM.y + (p[1] - CAM.y) * k, k];
+  };
+  // Something standing on the desk at (x, z), turned `theta` degrees toward cx: its own (u, v, w) to the world's (x, y, z).
+  const standing = (x, z, theta) => {
+    const c = Math.cos((theta * Math.PI) / 180);
+    const s = Math.sin((theta * Math.PI) / 180);
+    return (u, v, w) => [x + u * c - w * s, DESK_Y + v, z + u * s + w * c];
+  };
+  const onMonitor = standing(MONITOR.x, MONITOR.z, MONITOR.theta);
+  const onKeyboard = standing(KEYBOARD.x, KEYBOARD.z, KEYBOARD.theta);
+  const vsub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const vdot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const vcross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const vmean = (pts) => pts.reduce((a, q) => [a[0] + q[0] / pts.length, a[1] + q[1] / pts.length, a[2] + q[2] / pts.length], [0, 0, 0]);
+  const rect3 = (u0, u1, v0, v1, w) => [[u0, v0, w], [u1, v0, w], [u1, v1, w], [u0, v1, w]];
+  // A convex part of eight corners — its front rectangle, then its back one, each clockwise from the top left — reduced to the
+  // faces that look at the camera, projected, each with the shade the light from above gives it.
+  const HEX = Object.freeze([[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [3, 2, 6, 7], [1, 2, 6, 5], [0, 3, 7, 4]]);
+  const part = (place, front, back, name) => {
+    const corners = [...front, ...back].map((q) => place(q[0], q[1], q[2]));
+    const centre = vmean(corners);
+    const eye = [CAM.x, CAM.y, CAM.z];
+    return HEX.flatMap((idx, i) => {
+      const pts = idx.map((j) => corners[j]);
+      const at = vmean(pts);
+      let n = vcross(vsub(pts[1], pts[0]), vsub(pts[2], pts[0]));
+      if (vdot(n, vsub(at, centre)) < 0) n = n.map((x) => -x);
+      if (vdot(n, vsub(eye, at)) <= 0) return [];
+      const shade = n[1] < -0.5 * Math.hypot(n[0], n[1], n[2]) ? "top" : i === 0 ? "front" : "side";
+      return [Object.freeze({ part: name, shade, pts: Object.freeze(pts.map(project)) })];
+    });
+  };
+  const block = (place, u, v, w, name) => part(place, rect3(u[0], u[1], v[0], v[1], w[1]), rect3(u[0], u[1], v[0], v[1], w[0]), name);
+  const HOOD_BOTTOM = -(MONITOR.foot.h + MONITOR.neck.h);
+  const HOOD_TOP = HOOD_BOTTOM - MONITOR.hood.h;
+  const HOOD_MID = (HOOD_TOP + HOOD_BOTTOM) / 2;
+  const SCREEN_MID = HOOD_TOP + MONITOR.screen.top + MONITOR.screen.h / 2;
+  const CHIN = (HOOD_TOP + MONITOR.screen.top + MONITOR.screen.h + HOOD_BOTTOM) / 2;
+  // Back to front: the foot and the neck under the case, the tube behind it, the case and its face; the keyboard in front of it all.
+  const MONITOR_FACES = (() => {
+    const { foot, neck, hood, tube } = MONITOR;
+    return Object.freeze([
+      ...block(onMonitor, [-foot.w / 2, foot.w / 2], [-foot.h, 0], [-foot.d / 2 - foot.back, foot.d / 2 - foot.back], "foot"),
+      ...block(onMonitor, [-neck.w / 2, neck.w / 2], [HOOD_BOTTOM, -foot.h], [-neck.d / 2 - neck.back, neck.d / 2 - neck.back], "neck"),
+      ...part(onMonitor, rect3(-hood.w * 0.47, hood.w * 0.47, HOOD_MID - hood.h * 0.46, HOOD_MID + hood.h * 0.46, -hood.d), rect3(-tube.w / 2, tube.w / 2, HOOD_MID + tube.drop - tube.h / 2, HOOD_MID + tube.drop + tube.h / 2, -hood.d - tube.d), "tube"),
+      ...block(onMonitor, [-hood.w / 2, hood.w / 2], [HOOD_TOP, HOOD_BOTTOM], [-hood.d, 0], "hood"),
+    ]);
+  })();
+  const KEYBOARD_FACES = Object.freeze(block(onKeyboard, [-KEYBOARD.w / 2, KEYBOARD.w / 2], [-KEYBOARD.h, 0], [-KEYBOARD.d / 2, KEYBOARD.d / 2], "keyboard"));
+  // A point on the face, in the screen's own frame (x right, y down, about the screen's centre); a point on the keyboard's top.
+  const toFace = (x, y) => project(onMonitor(x, SCREEN_MID + y, 0.05));
+  const toKeys = (u, w) => project(onKeyboard(u, -KEYBOARD.h, w));
+  const BUTTON_AT = Object.freeze([-MONITOR.hood.w / 2 + 11, CHIN - SCREEN_MID]);
+  const LED = Object.freeze(toFace(MONITOR.hood.w / 2 - 11, CHIN - SCREEN_MID));
+  const BUTTON = Object.freeze(toFace(BUTTON_AT[0], BUTTON_AT[1]));
+  const BUTTON_HAND = Object.freeze([BUTTON[0] - 7, BUTTON[1] - 3]);
+  // Four keys along the keyboard's middle from its end nearer cx: the right hand works the first two, the far hand the other two.
+  // Each lights, a patch of the keyboard's top, while a hand is down on it.
+  const KEY_U = Object.freeze([-0.3, -0.1, 0.1, 0.3].map((t) => t * KEYBOARD.w));
+  const KEYS = Object.freeze(KEY_U.map((u) => Object.freeze(toKeys(u, 0))));
+  const overKey = (i, lift) => [KEYS[i][0], KEYS[i][1] - 2 - lift];
+  // Both hands at the keyboard, each over its own keys; the one whose key it is strikes. `strike` is 1 on the key and 0 at the hover.
+  const atKeyboard = (key, strike, hover) => {
+    const right = key <= 1;
+    return {
+      right: reachArm(overKey(right ? key : 1, right ? hover * (1 - strike) : hover), 82, 1, undefined, 7),
+      left: farArm(overKey(right ? 2 : key, right ? hover : hover * (1 - strike)), 82, 5),
+    };
+  };
+  // How far a keystroke is along: 1 while the hand is on the key, falling to 0 as it lifts; a still frame shows the key struck.
+  const strikeOf = (age) => (!Number.isFinite(age) ? 1 : age < STRIKE_HOLD ? 1 : age < TAP ? 1 - easeOut((age - STRIKE_HOLD) / (TAP - STRIKE_HOLD)) : 0);
+  const COMPUTER_BOX = (() => {
+    const pts = [...MONITOR_FACES, ...KEYBOARD_FACES].flatMap((face) => face.pts);
+    const xs = pts.map((q) => q[0]);
+    const ys = pts.map((q) => q[1]);
+    const x0 = Math.min(...xs) - 4;
+    const y0 = Math.min(...ys) - 4;
+    return Object.freeze({ x: x0, y: y0, w: Math.max(...xs) + 4 - x0, h: Math.max(...ys) + 4 - y0 });
+  })();
+  // Every point the computer is drawn through: the monitor and the keyboard.
+  const COMPUTER_PTS = Object.freeze([...MONITOR_FACES, ...KEYBOARD_FACES].flatMap((face) => face.pts));
+  // The two click targets in scene units. cx's ends where the computer's begins, so every point of the computer is the computer's.
+  const TARGETS = Object.freeze({
+    computer: COMPUTER_BOX,
+    cx: Object.freeze({ x: -72, y: -54, w: COMPUTER_BOX.x + 72, h: 94 }),
+  });
+  // The targets in the order they are drawn, the last on top; a point falls on the topmost target that holds it.
+  const TARGET_ORDER = Object.freeze(["cx", "computer"]);
+  const hitOf = (x, y) => [...TARGET_ORDER].reverse().find((name) => {
+    const box = TARGETS[name];
+    return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
+  });
+  // Flat shapes as point lists — sampled arcs, rounded rectangles, discs — drawn through a map onto a plane of the scene.
+  const arcPts = (cx, cy, r, a0, a1, n) => Array.from({ length: n + 1 }, (_, i) => polar(a0 + ((a1 - a0) * i) / n, r)).map((q) => [cx + q[0], cy + q[1]]);
+  const roundRect = (x, y, w, h, r) => {
+    const q = Math.max(0, Math.min(r, w / 2, h / 2));
+    return { closed: true, pts: [...arcPts(x + w - q, y + q, q, -90, 0, 4), ...arcPts(x + w - q, y + h - q, q, 0, 90, 4), ...arcPts(x + q, y + h - q, q, 90, 180, 4), ...arcPts(x + q, y + q, q, 180, 270, 4)] };
+  };
+  const disc = (cx, cy, r) => ({ closed: true, pts: arcPts(cx, cy, r, 0, 360, 28).slice(0, -1) });
+  const polyline = (pts) => ({ closed: false, pts });
+  const polygon = (pts) => ({ closed: true, pts });
+  const outline = (pts, closed) => pts.map((q, i) => `${i ? "L" : "M"} ${f(q[0])} ${f(q[1])}`).join(" ") + (closed ? " Z" : "");
+  const mapped = (map, shapes) => shapes.map((shape) => outline(shape.pts.map((q) => map(q[0], q[1])), shape.closed)).join(" ");
+
+  // ---- poses and eyes (mark units), as the promo names them ----
+  const arm = (elbow, hand, fingers, item) => ({ elbow, hand, fingers, item });
+  const mirrorArm = (a) => ({ elbow: [-a.elbow[0], a.elbow[1]], hand: [-a.hand[0], a.hand[1]], fingers: 180 - a.fingers, item: a.item });
+  const REST_R = arm([70, 12], [72, 30], 95);
+  const RAISE_R = arm([78, -18], [86, -44], -70);
+  const REST = Object.freeze({ left: mirrorArm(REST_R), right: REST_R });
+  const RAISE = Object.freeze({ left: mirrorArm(RAISE_R), right: RAISE_R });
+  // An arm that reaches a hand position, bowing at the elbow away from the body.
+  const reachArm = (hand, fingers, side, item, bow) => {
+    const sx = SHOULDER[0] * side;
+    const sy = SHOULDER[1];
+    const dx = hand[0] - sx;
+    const dy = hand[1] - sy;
+    const len = Math.hypot(dx, dy) || 1;
+    let px = -dy / len;
+    let py = dx / len;
+    if (px * side < 0) { px = -px; py = -py; }
+    const b = bow === undefined ? 9 : bow;
+    return { elbow: [(sx + hand[0]) / 2 + px * b, (sy + hand[1]) / 2 + py * b], hand, fingers, item };
+  };
+  // An arm of a natural length reaching a hand: the elbow bent while the hand is near, the arm nearly straight once the hand is as far
+  // away as the arm is long, and stretched past that as a hose that keeps a slight sag.
+  const bendArm = (hand, fingers, side, item) => {
+    const d = Math.hypot(hand[0] - SHOULDER[0] * side, hand[1] - SHOULDER[1]);
+    return reachArm(hand, fingers, side, item, Math.max(3, d * 0.09, Math.sqrt(Math.max(0, ARM_NATURAL * ARM_NATURAL - d * d)) / 2));
+  };
+  // The left arm reaching round to cx's right from behind the body (FAR_SHOULDER), its elbow bowed down.
+  const farArm = (hand, fingers, bow) => {
+    const [sx, sy] = FAR_SHOULDER;
+    const dx = hand[0] - sx;
+    const dy = hand[1] - sy;
+    const len = Math.hypot(dx, dy) || 1;
+    const b = bow === undefined ? 6 : bow;
+    return { elbow: [(sx + hand[0]) / 2 - (dy / len) * b, (sy + hand[1]) / 2 + (dx / len) * b], hand, fingers, item: undefined, far: 1 };
+  };
+
+  const EYES_NEUTRAL = Object.freeze({ sx: 1, sy: 1, dx: 0, dy: 0 });
+  const eyes = (o) => Object.assign({}, EYES_NEUTRAL, o);
+
+  const lerp = (a, b, p) => a + (b - a) * p;
+  const lerpPt = (a, b, p) => [lerp(a[0], b[0], p), lerp(a[1], b[1], p)];
+  const lerpArm = (a, b, p) => ({ elbow: lerpPt(a.elbow, b.elbow, p), hand: lerpPt(a.hand, b.hand, p), fingers: lerp(a.fingers, b.fingers, p), item: p < 0.5 ? a.item : b.item, far: lerp(a.far || 0, b.far || 0, p) });
+  const lerpEyes = (a, b, p) => ({ sx: lerp(a.sx, b.sx, p), sy: lerp(a.sy, b.sy, p), dx: lerp(a.dx, b.dx, p), dy: lerp(a.dy, b.dy, p) });
+  const lerpFrame = (a, b, p) => ({
+    eyes: lerpEyes(a.eyes, b.eyes, p),
+    eyesR: lerpEyes(a.eyesR || a.eyes, b.eyesR || b.eyes, p),
+    pose: { left: lerpArm(a.pose.left, b.pose.left, p), right: lerpArm(a.pose.right, b.pose.right, p) },
+    squash: lerp(a.squash, b.squash, p),
+    rotate: lerp(a.rotate, b.rotate, p),
+    dy: lerp(a.dy, b.dy, p),
+    zz: lerp(a.zz, b.zz, p),
+    screen: lerp(a.screen === undefined ? 1 : a.screen, b.screen === undefined ? 1 : b.screen, p),
+    boot: lerp(a.boot === undefined ? 1 : a.boot, b.boot === undefined ? 1 : b.boot, p),
+    think: lerp(a.think || 0, b.think || 0, p),
+    hit: lerp(a.hit || 0, b.hit || 0, p),
+    hitKey: b.hit ? b.hitKey : a.hitKey,
+  });
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const easeInOut = (v) => (v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2);
+  const easeOut = (v) => 1 - Math.pow(1 - v, 3);
+  const easeOutBack = (v) => 1 + 2.6 * Math.pow(v - 1, 3) + 1.6 * Math.pow(v - 1, 2);
+  const prog = (t, t0, t1, e) => (e || easeInOut)(clamp01((t - t0) / (t1 - t0)));
+  const osc = (t, hz, amp, phase) => Math.sin((t * hz + (phase || 0)) * 2 * Math.PI) * amp;
+  // A blink: the lids close and open over 0.16 s, once per `period` seconds, first at `at`.
+  const blink = (t, period, at) => {
+    const u = ((t - at) % period + period) % period;
+    return u < 0.16 ? 1 - 0.9 * Math.sin((u / 0.16) * Math.PI) : 1;
+  };
+
+  const frame = (o) => Object.assign({ eyes: EYES_NEUTRAL, pose: REST, squash: 1, rotate: 0, dy: 0, zz: 0, screen: 1, boot: 1, think: 0, hit: 0, hitKey: 0 }, o);
+
+  // ---- the five states: what cx does, as a function of the seconds since the state was entered ----
+  const STATE = {
+    // The box is stopped: lids closed, slumped, breathing slowly, a z rising on each breath.
+    sleeping: {
+      motion: "slow",
+      at: (t) => {
+        const breath = (t * 0.22) % 1;
+        return frame({ eyes: eyes({ sy: 0.18, dy: 1.4 }), rotate: -6, dy: 4, squash: 1 + 0.02 * Math.sin(breath * 2 * Math.PI), zz: breath });
+      },
+    },
+    // The page has asked for the box and no life frame has come: a pop awake, then a stretch held while the wait lasts.
+    waking: {
+      motion: "continuous",
+      at: (t) => {
+        const tau = t - 0.25;
+        const pop = t < 0.25 ? lerp(0.8, 1.2, prog(t, 0, 0.25, easeOut)) : 1 + 0.2 * Math.cos(tau * 2 * Math.PI * 3) * Math.exp(-tau * 5);
+        const up = prog(t, 0.1, 0.6, easeOutBack);
+        const sway = t > 0.8 ? osc(t - 0.8, 0.3, 1) : 0;
+        const lids = t < 0.5 ? lerp(0.35, 1.25, prog(t, 0.12, 0.5)) : lerp(1.25, 1, prog(t, 0.5, 1.2)) * blink(t, 2.6, 1.6);
+        const stretch = { left: { ...RAISE.left, hand: [RAISE.left.hand[0], RAISE.left.hand[1] - 3 * sway] }, right: { ...RAISE.right, hand: [RAISE.right.hand[0], RAISE.right.hand[1] + 3 * sway] } };
+        return frame({
+          eyes: eyes({ sx: lerp(1, 1.15, up), sy: lids, dy: -1.5 * up }),
+          pose: { left: lerpArm(REST.left, stretch.left, up), right: lerpArm(REST.right, stretch.right, up) },
+          squash: pop,
+          rotate: 2.5 * sway,
+          dy: -1.5 * sway,
+        });
+      },
+    },
+    // The stream is open and nothing is being produced: stillness, a blink every six seconds.
+    ready: { motion: "blink", period: 6, blinkAt: 3, at: (t) => frame({ eyes: eyes({ sy: blink(t, 6, 3) }) }) },
+    // A tool call is running: the glass held up in front of the right eye, that eye magnified behind it, the other narrowed; the glass drifts slowly over what it reads.
+    analysing: {
+      motion: "continuous",
+      at: (t) => {
+        const s = osc(t, 0.22, 1);
+        const c = osc(t, 0.22, 1, 0.25);
+        const ang = -132;
+        const [gx, gy] = polar(ang, LENS_AT);
+        const glass = [EYE_CX + 2.2 * s, -1 + 1.6 * c];
+        return frame({
+          eyes: eyes({ sy: 0.5, dx: 1 }),
+          eyesR: eyes({ sx: 1.5, sy: 1.5, dx: 1.4 * s, dy: 1 * c }),
+          pose: { left: REST.left, right: reachArm([glass[0] - gx, glass[1] - gy], ang, 1, "glass", 12) },
+          rotate: 2 + 0.8 * s,
+        });
+      },
+    },
+    // Text is arriving: the pencil on the line, small strokes travelling right, back to the margin for each new line; the body bobs, the arm keeps the point on the paper.
+    writing: {
+      motion: "continuous",
+      at: (t) => {
+        const line = (t % 2.4) / 2.4;
+        const travel = line < 0.82 ? (line / 0.82) * 12 : 12 * (1 - prog(line, 0.82, 1));
+        const bob = osc(t, 0.5, 2);
+        const stroke = line < 0.82 ? osc(t, 7, 1.1) : 0;
+        const hand = [94 + travel + osc(t, 11, 0.4), -10 + stroke - bob];
+        return frame({
+          eyes: eyes({ sx: 1.05, sy: 0.85, dx: 3 + travel / 12, dy: 2.5 }),
+          pose: { left: REST.left, right: reachArm(hand, -8, 1, "pencil", 8) },
+          rotate: -2,
+          dy: bob,
+        });
+      },
+    },
+  };
+
+  // The computer's state is cx's own: off while cx sleeps, coming on while cx wakes, on while cx is up; refused when an open was refused
+  // (the reason as a glyph on the screen, the word in cx's bubble); unwatched when the page has not read the box yet: cx at rest before a
+  // dark screen.
+  const machineOf = (state, m) => (state === "sleeping" ? (m.reason ? "refused" : "off") : state === "waking" ? "starting" : m.heard ? "unwatched" : "on");
+  const walk = mulberry32(5);
+  const KEY_WALK = Object.freeze(Array.from({ length: 64 }, () => Math.floor(walk() * KEYS.length)));
+  // Between two places: the arms swing up, the body leans and stretches the way it goes, and the eyes look ahead. A hop from the
+  // desk or back to it crouches first and lands with a squash; a move to another kind of block of the answer is the same, smaller.
+  const flying = (fr, trip) => {
+    const u = trip.flight;
+    const arc = Math.sin(Math.PI * u) * trip.lift;
+    const squash = trip.lift < 1 ? 1 + 0.05 * Math.sin(Math.PI * u) : u < 0.14 ? 1 - 0.16 * Math.sin((u / 0.14) * Math.PI) : u > 0.86 ? 1 - 0.12 * Math.sin(((u - 0.86) / 0.14) * Math.PI) : 1 + 0.08 * Math.sin(((u - 0.14) / 0.72) * Math.PI);
+    return {
+      ...fr,
+      pose: { left: lerpArm(fr.pose.left, RAISE.left, 0.6 * arc), right: lerpArm(fr.pose.right, RAISE.right, 0.6 * arc) },
+      eyes: eyes({ sx: 1 + 0.12 * arc, sy: 1 + 0.1 * arc, dx: trip.dir[0] * 2.6 * arc, dy: trip.dir[1] * 2 * arc }),
+      eyesR: undefined,
+      rotate: fr.rotate + trip.dir[0] * 7 * arc,
+      squash: fr.squash * squash,
+    };
+  };
+  const brightness = (machine, t, m) => (machine === "off" ? 0 : machine === "starting" ? prog(t, 0.55, 2.0) : machine === "refused" ? 0.55 : machine === "unwatched" ? 0 : m.sleepy ? 0.6 : 1);
+  // What the scene adds to a state's frame: the screen's brightness, and the poses the extra signals put cx in. `t` counts from the
+  // state, `tc` from the last change of the signals, `tapAge` from the person's last keystroke; `trip` says whether cx is away from
+  // its desk and whether it is between two places.
+  const sceneAt = (state, t, tc, tapAge, base, m, trip) => {
+    const fr = seated(state, t, tc, tapAge, base, m, trip);
+    return trip && trip.flight >= 0 ? flying(fr, trip) : fr;
+  };
+  const seated = (state, t, tc, tapAge, base, m, trip) => {
+    const machine = machineOf(state, m);
+    // The boot bar: empty until the machine starts, filling fast then slowly while the open is in flight (the page cannot know how long
+    // that takes), full — and gone — when the first life frame makes cx ready. In every other state it is empty and unseen.
+    const fr = { ...base, screen: brightness(machine, t, m), boot: state === "ready" ? 1 : 0 };
+    const oneOnKeys = () => reachArm(overKey(1, 3), 82, 1, undefined, 7);
+    const atScreen = (o) => eyes(Object.assign({ sx: 1.03, sy: 0.92, dx: 2.4, dy: -0.6 }, o));
+    if (state === "waking") {
+      // cx turns the computer on: the eyes open (the base frame's pop), the hand reaches the button and presses it, the screen comes on, the hand comes back.
+      const reach = prog(t, 0.05, 0.5, easeOut);
+      const press = t > 0.45 && t < 0.75 ? Math.sin(((t - 0.45) / 0.3) * Math.PI) : 0;
+      const back = prog(t, 1.2, 1.8);
+      const arm = reachArm([BUTTON_HAND[0] + 2 * press, BUTTON_HAND[1] + 1.5 * press], -15, 1, undefined, 16);
+      fr.pose = { left: REST.left, right: lerpArm(lerpArm(REST.right, arm, reach), REST.right, back) };
+      fr.eyes = t < 0.5 ? eyes({ ...base.eyes, dx: 2.4 * reach, dy: -0.6 * reach }) : atScreen({ sy: base.eyes.sy });
+      fr.rotate = 3 * (reach - back);
+      fr.dy = 0;
+      fr.boot = t < 0.8 ? 0 : 0.92 * (1 - Math.exp(-(t - 0.8) / 1.6));
+      return fr;
+    }
+    // A cx get is running and its receipt is on its way from the sidebar (spikes/sources-bar). `catching: "watch"`: the arms down, the
+    // eyes up and to the left, where the receipt comes from, a small lean toward it. `catching: "reach"`, set as the receipt is about to
+    // arrive: the left hand comes up into the very pose that holds the receipt, with the receipt in it but not yet drawn, so when it
+    // lands (`receipt`) nothing moves and the paper simply shows — at the size, place and angle of the one that flew.
+    const watching = (right) => {
+      const b = osc(t, 0.5, 1);
+      fr.pose = { left: REST.left, right };
+      fr.eyes = eyes({ sx: 1.04, sy: 0.9 * blink(t, 4.6, 2.2), dx: -2.9, dy: -2.4 });
+      fr.eyesR = undefined;
+      fr.rotate = -4 - 0.8 * b;
+      fr.dy = -0.5 * b;
+    };
+    if (state === "ready" && m.thinking) {
+      // The model thinks, at the desk or in the margin alike: the right hand under the chin, the eyes up and aside, a slow sway; dots
+      // rise over the head.
+      const sway = osc(t, 0.22, 1);
+      fr.pose = { left: REST.left, right: reachArm([9 + 1.2 * sway, 37], -112, 1, undefined, 16) };
+      fr.eyes = eyes({ sx: 1, sy: 0.82 * blink(t, 4.2, 2.1), dx: -2.4 + 0.5 * sway, dy: -2.6 });
+      fr.eyesR = undefined;
+      fr.rotate = -4 + 1.5 * sway;
+      fr.think = 1;
+      return fr;
+    }
+    if (trip && trip.away) {
+      // In the margin, beside the line being produced: the pencil held out to the line's start while text arrives, the glass while a
+      // tool runs (the five states' own), the receipt held up and read while a cx get runs.
+      if (state === "writing") {
+        // The pencil's point at the line's start, clear of the text. While text arrives it writes there: a stroke to the right that ends
+        // at the line's start, small ups and downs along it, and a lifted return; the body bobs with the strokes. When the text stops,
+        // the point rests on the line's start. The eyes on the point.
+        const w = trip.writing;
+        const u = (t * 2.2) % 1;
+        const run = u < 0.8 ? u / 0.8 : 1 - easeInOut((u - 0.8) / 0.2);
+        const tx = PEN_TIP[0] - w * 11 * (1 - run);
+        const ty = PEN_TIP[1] + w * (u < 0.8 ? 1.8 * osc(t, 9, 1) : -3 * Math.sin(((u - 0.8) / 0.2) * Math.PI));
+        const a = (PEN_ANGLE * Math.PI) / 180;
+        fr.pose = { left: REST.left, right: reachArm([tx - PEN_POINT * Math.cos(a), ty - PEN_POINT * Math.sin(a)], PEN_ANGLE, 1, "pencil", 9) };
+        fr.eyes = eyes({ sx: 1.04, sy: 0.9 * blink(t, 5, 2.5), dx: 3.2, dy: 0.8 });
+        fr.eyesR = undefined;
+        fr.rotate = 2;
+        fr.dy = w * osc(t, 2.2, 0.9);
+        return fr;
+      }
+      if (state === "analysing" && (m.receipt || m.catching === "reach")) {
+        const s = osc(t, 0.2, 1);
+        const c = osc(t, 0.2, 1, 0.25);
+        fr.pose = { left: reachArm([SLIP_AT[0] + 1.5 * s, SLIP_AT[1] + 1.2 * c], -105, -1, "slip", 10), right: REST.right };
+        fr.eyes = eyes({ sx: 1, sy: 0.8, dx: -2.6 + 0.3 * s, dy: 1.2 });
+        fr.eyesR = undefined;
+        fr.rotate = -3 + 0.6 * s;
+      } else if (state === "analysing" && m.catching === "watch") watching(REST.right);
+      return fr;
+    }
+    if (state === "writing") {
+      // Where the margin cannot hold cx, it writes the answer at its desk: both hands at the keys in turn seven times a second, the eyes
+      // on the screen, the body turned to it and nodding with each stroke.
+      const n = Math.floor(t * 7);
+      const strike = strikeOf(((t * 7) % 1) / 7);
+      const key = n % 2 === 0 ? KEY_WALK[n % KEY_WALK.length] % 2 : 2 + (KEY_WALK[n % KEY_WALK.length] % 2);
+      fr.pose = atKeyboard(key, strike, HOVER);
+      fr.eyes = atScreen({ dx: 2.6 + 0.4 * osc(t, 0.4, 1) });
+      fr.eyesR = undefined;
+      fr.rotate = 4 + 3 * strike;
+      fr.dy = 2.4 * strike;
+      fr.hit = strike;
+      fr.hitKey = key;
+    } else if (state === "analysing" && (m.receipt || m.catching === "reach")) {
+      // A cx get is running: the receipt held up in the left hand and read; the right hand waits on the keys.
+      const s = osc(t, 0.2, 1);
+      const c = osc(t, 0.2, 1, 0.25);
+      fr.pose = { left: reachArm([SLIP_AT[0] + 1.5 * s, SLIP_AT[1] + 1.2 * c], -105, -1, "slip", 10), right: oneOnKeys() };
+      fr.eyes = eyes({ sx: 1, sy: 0.8, dx: -2.6 + 0.3 * s, dy: 1.2 });
+      fr.eyesR = undefined;
+      fr.rotate = -3 + 0.6 * s;
+    } else if (state === "analysing" && m.catching === "watch") {
+      watching(oneOnKeys());
+    } else if (state === "ready" && m.sleepy) {
+      // Sleep is due: a yawn — the lids closing, both arms up and held, the head back — then drowsy lids and slow blinks until the next.
+      const u = tc % YAWN;
+      const up = u < 0.7 ? prog(u, 0, 0.7, easeOutBack) : u < 1.9 ? 1 : 1 - prog(u, 1.9, 2.7);
+      const sway = u > 0.7 && u < 1.9 ? osc(u - 0.7, 0.4, 1) : 0;
+      fr.eyes = eyes({ sy: u < 2.7 ? lerp(0.7, 0.1, up) : 0.7 * blink(u, 3.2, 4.4), dy: 0.8 });
+      fr.pose = {
+        left: lerpArm(REST.left, { ...RAISE.left, hand: [RAISE.left.hand[0], RAISE.left.hand[1] - 2 * sway] }, up),
+        right: lerpArm(REST.right, { ...RAISE.right, hand: [RAISE.right.hand[0], RAISE.right.hand[1] + 2 * sway] }, up),
+      };
+      fr.rotate = -5 * up - 1.5;
+      fr.dy = -2 * up + 1.2;
+      fr.squash = 1 + 0.04 * up;
+    } else if (state === "ready" && m.typing) {
+      // The person is typing: both hands over the keys, and at each keystroke the next hand in turn strikes; the body turned to the
+      // computer nods with each stroke, the eyes on the screen, where the draft grows.
+      const strike = strikeOf(tapAge);
+      fr.pose = atKeyboard(m.key, strike, HOVER);
+      fr.eyes = atScreen({ sy: base.eyes.sy * 0.92 });
+      fr.rotate = 4 + 4 * strike;
+      fr.dy = 3 * strike;
+      fr.hit = strike;
+      fr.hitKey = m.key;
+    } else if (state === "ready" && m.draft > 0 && !m.reading) {
+      // A draft is in the composer and the person has paused: cx keeps its hands at the keys and its eyes on the draft on its screen.
+      fr.pose = atKeyboard(1, 0, 4);
+      fr.eyes = atScreen({ sy: base.eyes.sy * 0.95 });
+      fr.rotate = 3;
+    } else if (state === "ready" && m.reading) {
+      // A message is sent and nothing has come back yet: leaning in, the eyes on the screen, the hand waiting on the keys.
+      fr.pose = { left: REST.left, right: oneOnKeys() };
+      fr.eyes = atScreen({ sy: base.eyes.sy * 0.92, dx: 2.6 });
+      fr.rotate = 3;
+      fr.dy = 1;
+    }
+    return fr;
+  };
+
+  const BLEND = 0.35;
+  // One motion vocabulary for cx and for what reaches it: the blend between two states, and the hop — the arc cx jumps along, and
+  // the arc a bought file flies along into cx's hands (the sources module reads these, so the two never keep two timing scales).
+  // A hop lasts `dur` seconds and rises `rise` plus `perPx` of its length, at most `riseMax`, in the units it is drawn in. `hold` is how
+  // long a thing is shown before it moves on (a purchase on its row before the file leaves); `read` how long cx keeps reading a
+  // receipt once it has landed in its hands; `wipe` how long an edge takes to sweep across a small thing, a sidebar row covered by a
+  // purchase and uncovered again.
+  const MOTION = Object.freeze({ blend: BLEND, wipe: 0.55, hold: 0.5, read: 1.6, hop: Object.freeze({ dur: 0.62, rise: 22, perPx: 0.05, riseMax: 48 }), ease: easeInOut, easeOut });
+  // The receipt: a small paper with its printed lines, held by its lower edge. The same shape is the one in cx's hand and the one that
+  // flies to it; in its own units it spans x 2..29 and y -9..9 (SLIP_MID is its middle), at a stroke of `stroke` units.
+  const SLIP_MID = Object.freeze([15.5, 0]);
+  const slipShape = (stroke) =>
+    el("g", { stroke: "currentColor", "stroke-width": stroke, "stroke-linecap": "round" }, [
+      el("rect", { x: 2, y: -9, width: 27, height: 18, rx: 1, fill: "var(--cx-paper)" }),
+      el("path", { d: "M 7 -5 L 7 5 M 12 -5 L 12 5 M 17 -5 L 17 2 M 24 -5 L 24 5", opacity: 0.6, fill: "none" }),
+    ]);
+  const STILL_T = 1.0;
+  const SLOW_MS = 66;
+  let instances = 0;
+
+  const mount = (container, options) => {
+    const opts = Object.assign({ size: 72, state: "ready", motion: "auto", stillAt: STILL_T, scene: false, lang: "zh" }, options || {});
+    const scene = opts.scene === true;
+    const box = scene ? SCENE_VB : VB;
+    if (!STATES.includes(opts.state)) throw new Error(`cx: unknown state ${opts.state}`);
+    const id = `cx${++instances}`;
+    const reduced = opts.motion === "still" || (opts.motion === "auto" && typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+    const paper = (cl, cr, dy) =>
+      el("g", { mask: `url(#${id}-mb)`, transform: dy ? `translate(0 ${dy})` : undefined }, [
+        el("circle", { cx: -19, cy: 0, r: 30, fill: "none", stroke: cl, "stroke-width": 15 }),
+        el("circle", { cx: 19, cy: 0, r: 30, fill: "none", stroke: cr, "stroke-width": 15 }),
+        el("path", { d: LENS, fill: cr }),
+        el("g", { mask: `url(#${id}-mw)` }, [el("circle", { cx: -19, cy: 0, r: 30, fill: "none", stroke: cl, "stroke-width": 15 }), el("path", { d: LENS, fill: cl })]),
+      ]);
+    const eyePiece = (side, fill, dy) => el("g", { transform: dy ? `translate(0 ${dy})` : undefined, "clip-path": `url(#${id}-eye${side === 1 ? "L" : "R"})`, mask: `url(#${id}-mx)` }, [el("path", { d: LENS, fill })]);
+    const armNode = () => ({
+      g: el("g", {}, []),
+      line: el("path", {}),
+      item: el("g", {}, []),
+      palm: el("circle", { r: PALM_R }),
+      fingers: [el("path", {}), el("path", {}), el("path", {})],
+    });
+    const wire = (node) => {
+      node.g.append(node.line, node.item, node.palm, ...node.fingers);
+      return node.g;
+    };
+    const armL = armNode();
+    const armR = armNode();
+    const eyeL = el("g", {}, [eyePiece(1, "var(--cx-forest-shade)", 0.9), eyePiece(1, "var(--cx-forest)")]);
+    const eyeR = el("g", {}, [eyePiece(-1, "var(--cx-sand-shade)", 0.9), eyePiece(-1, "var(--cx-sand)")]);
+    const hands = el("g", { class: "cx-hands", stroke: "currentColor", "stroke-linecap": "round", "stroke-linejoin": "round", fill: "none" }, [wire(armL), wire(armR)]);
+    const body = el("g", { class: "cx-body" }, [
+      el("g", { class: "cx-paper" }, [paper("var(--cx-forest-shade)", "var(--cx-sand-shade)", 1.8), paper("var(--cx-forest)", "var(--cx-sand)", 0)]),
+      el("g", { class: "cx-eyes" }, [eyeL, eyeR]),
+      hands,
+    ]);
+    const zz = el("path", { class: "cx-zz", d: wobbly([[0, 0], [6.5, 0], [0, 6.5], [6.5, 6.5]], 71, 0.3), fill: "none", stroke: "currentColor", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: 0 });
+    // ---- the scene: the desk, the old computer turned toward cx, its keyboard ----
+    const SHADE = Object.freeze({
+      front: "var(--cx-bezel)", top: "var(--cx-bezel-top)", side: "var(--cx-bezel-side)",
+      tubeTop: "var(--cx-tube-top)", tubeSide: "var(--cx-tube-side)",
+    });
+    const shadeOf = (face) => (face.part === "tube" ? (face.shade === "top" ? SHADE.tubeTop : SHADE.tubeSide) : SHADE[face.shade]);
+    const furniture = () => {
+      const attrs = { class: "cx-scene", stroke: "currentColor", "stroke-linecap": "round", "stroke-linejoin": "round" };
+      const faces = (list) => list.map((face) => el("path", { d: outline(face.pts, true), fill: shadeOf(face) }));
+      const rows = [-KEYBOARD.d / 5, KEYBOARD.d / 5].map((w) => el("path", { class: "cx-keys", d: mapped((u, ww) => toKeys(u, ww), [polyline([[-KEYBOARD.w / 2 + 7, w], [KEYBOARD.w / 2 - 7, w]])]), fill: "none", opacity: 0.3, "stroke-dasharray": "3 2.5" }));
+      return el("g", attrs, [
+        ...faces(MONITOR_FACES),
+        // The power button on the face's chin, at the end nearer cx.
+        el("path", { d: mapped(toFace, [disc(BUTTON_AT[0], BUTTON_AT[1], 3.2)]), fill: SHADE.side }),
+        ...faces(KEYBOARD_FACES),
+        ...rows,
+      ]);
+    };
+    const deskLine = () => el("path", { class: "cx-scene", d: wobbly([[-98, DESK_Y], [-40, DESK_Y], [30, DESK_Y], [100, DESK_Y], [170, DESK_Y], [210, DESK_Y], [246, DESK_Y]], 33, 0.6), fill: "none", stroke: "currentColor", "stroke-linecap": "round" });
+    const keyLight = el("path", { d: "", fill: "var(--cx-accent)" });
+    const KEY_LIGHT = KEY_U.map((u) => mapped(toKeys, [roundRect(u - 7, -6, 14, 12, 2.5)]));
+    const back = scene ? el("g", {}, [furniture(), keyLight]) : null;
+    const desk = scene ? deskLine() : null;
+    // The screen, on the turned face: a dark slab, a lit one whose opacity is the brightness, and what is shown — one element per thing,
+    // toggled. Everything on it is drawn in the screen's own frame and projected point by point, so it lies on the glass.
+    const SCR = MONITOR.screen;
+    const glass = mapped(toFace, [roundRect(-SCR.w / 2, -SCR.h / 2, SCR.w, SCR.h, SCR.r)]);
+    const slab = (fill, opacity) => el("path", { d: glass, fill, opacity });
+    const screenOff = slab("var(--cx-screen-off)", 1);
+    const screenOn = slab("var(--cx-screen-on)", 0);
+    const BOOT = Object.freeze({ x: -SCR.w / 2 + 14, y: 2, w: SCR.w - 28, h: 9 });
+    const bootFill = el("path", { d: "", fill: "var(--cx-accent)" });
+    const bootG = el("g", {}, [el("path", { d: mapped(toFace, [roundRect(BOOT.x, BOOT.y, BOOT.w, BOOT.h, BOOT.h / 2)]), fill: "none", stroke: "currentColor", opacity: 0.55, "data-sw": 1 }), bootFill]);
+    const lines = Array.from({ length: LINES_MAX }, () => el("path", { d: "", fill: "currentColor" }));
+    // The draft's caret after its last line, blinking as a text field's does; the document runs the blink, so the loop can sleep.
+    const caret = el("path", { d: "", fill: "currentColor" }, reduced ? [] : [el("animate", { attributeName: "opacity", values: "1;1;0;0", keyTimes: "0;0.5;0.5;1", dur: "1.06s", repeatCount: "indefinite" })]);
+    const linesG = el("g", {}, [...lines, caret]);
+    const pulse = el("path", { d: mapped(toFace, [disc(-SCR.w / 2 + 18, -SCR.h / 2 + 17, 3.5)]), fill: "var(--cx-accent)" });
+    const toolG = el("g", {}, [
+      el("path", { d: mapped(toFace, [roundRect(-SCR.w / 2 + 9, -SCR.h / 2 + 9, SCR.w - 24, 16, 3)]), fill: "none", stroke: "currentColor", opacity: 0.55 }),
+      pulse,
+      el("path", { d: mapped(toFace, [roundRect(-SCR.w / 2 + 26, -SCR.h / 2 + 14, 34, 6, 3)]), fill: "currentColor", opacity: 0.5 }),
+    ]);
+    const coin = (x, y, r) => el("g", { stroke: "currentColor", "data-sw": 1.2 }, [
+      el("path", { d: mapped(toFace, [disc(x, y, r)]), fill: "var(--cx-coin)" }),
+      el("path", { d: mapped(toFace, [disc(x, y, r * 0.62)]), fill: "none", opacity: 0.6 }),
+    ]);
+    // The reason as one big glyph in the middle of the screen: nothing on the screen is meant to be read.
+    const on = (shapes) => mapped(toFace, shapes);
+    const symbols = {
+      balance: coin(0, 0, 19),
+      // Every seat taken: a grid of filled squares.
+      seats: el("g", { fill: "currentColor", opacity: 0.75 }, [-15, 0, 15].flatMap((x) => [-7.5, 7.5].map((y) => el("path", { d: on([roundRect(x - 5.5, y - 5.5, 11, 11, 2)]) })))),
+      // The signal that is not there: the arcs, crossed out.
+      unreachable: el("g", { fill: "none", stroke: "currentColor", "data-sw": 1.6, "stroke-linecap": "round" }, [
+        ...[7, 15, 23].map((r) => el("path", { d: on([polyline(arcPts(0, 14, r, -140, -40, 12))]) })),
+        el("path", { d: on([disc(0, 14, 2.2)]), fill: "currentColor", stroke: "none" }),
+        el("path", { d: on([polyline([[-19, -17], [19, 17]])]), stroke: "var(--cx-bad)", "data-sw": 2.2 }),
+      ]),
+      // Did not start: a bang in a triangle.
+      failed: el("g", { stroke: "currentColor", "data-sw": 1.6, "stroke-linejoin": "round" }, [
+        el("path", { d: on([polygon([[0, -20], [22, 18], [-22, 18]])]), fill: "none" }),
+        el("path", { d: on([polyline([[0, -6], [0, 6]])]), "stroke-linecap": "round", "data-sw": 2.4 }),
+        el("path", { d: on([disc(0, 12, 1.6)]), fill: "currentColor", stroke: "none" }),
+      ]),
+    };
+    const reasonG = el("g", {}, Object.values(symbols));
+    const cornerG = el("g", {}, [coin(SCR.w / 2 - 13, -SCR.h / 2 + 12, 7)]);
+    const content = el("g", { class: "cx-screen-content" }, [bootG, linesG, toolG, reasonG, cornerG]);
+    // The power light on the face: the sidebar's box dot, now the machine's own.
+    const led = scene ? el("circle", { class: "cx-led", cx: f(LED[0]), cy: f(LED[1]), r: 3.4, fill: "none", stroke: "var(--cx-quiet)" }) : null;
+    const screenG = scene ? el("g", { class: "cx-screen" }, [screenOff, screenOn, content, led]) : null;
+    const target = (name, x, y, w, h) => el("rect", { class: "cx-target", "data-target": name, x: f(x), y: f(y), width: f(w), height: f(h), rx: 6, fill: "transparent", role: "button", tabindex: 0 });
+    const targetOf = (name) => target(name, TARGETS[name].x, TARGETS[name].y, TARGETS[name].w, TARGETS[name].h);
+    const targets = scene ? { computer: targetOf("computer"), cx: targetOf("cx") } : null;
+    // Through the CSSOM, not a style attribute: the pages' content security policy drops the attribute and leaves the CSSOM alone.
+    if (targets) for (const name in targets) targets[name].style.cursor = "pointer";
+    // Thought dots over the head while the model thinks; they ride with cx, as the body and the z do.
+    const thoughts = el("g", { class: "cx-thoughts", fill: "currentColor", opacity: 0 }, [el("circle", { cx: 36, cy: -46, r: 3 }), el("circle", { cx: 48, cy: -56, r: 4 }), el("circle", { cx: 62, cy: -64, r: 5 })]);
+    const rider = scene ? el("g", { class: "cx-rider" }, [body, zz, thoughts]) : null;
+    // Out in the stream cx is cut to the stream's view, so a step scrolled away takes cx with it and never over the frame around it.
+    const viewRect = el("rect", { x: 0, y: 0, width: 0, height: 0 });
+    // cx's target rides with cx, so cx is a target where it stands, and is cut to the view as cx is.
+    const pane = scene ? el("g", { class: "cx-pane" }, [rider, targets.cx]) : null;
+    const svg = el("svg", { class: scene ? "cx cx-with-scene" : "cx", viewBox: `${box.x} ${box.y} ${box.w} ${box.h}`, role: scene ? "group" : "img", "aria-hidden": scene ? undefined : "true", color: "var(--cx-line)", "data-state": opts.state }, [
+      el("defs", {}, [
+        el("mask", { id: `${id}-mx`, maskUnits: "userSpaceOnUse", x: -63, y: -41, width: 126, height: 82 }, [
+          el("rect", { x: -63, y: -41, width: 126, height: 82, fill: "white" }),
+          el("rect", { x: -23.77, y: -6.25, width: 47.54, height: 12.5, fill: "black", transform: "rotate(45)" }),
+          el("rect", { x: -23.77, y: -6.25, width: 47.54, height: 12.5, fill: "black", transform: "rotate(-45)" }),
+        ]),
+        // The body's mask: the channel, and the two eye triangles cut out, so an eye that closes leaves the hole behind it.
+        el("mask", { id: `${id}-mb`, maskUnits: "userSpaceOnUse", x: -63, y: -41, width: 126, height: 82 }, [
+          el("rect", { x: -63, y: -41, width: 126, height: 82, fill: "white" }),
+          el("rect", { x: -23.77, y: -6.25, width: 47.54, height: 12.5, fill: "black", transform: "rotate(45)" }),
+          el("rect", { x: -23.77, y: -6.25, width: 47.54, height: 12.5, fill: "black", transform: "rotate(-45)" }),
+          // Half a unit wider than the eye, so the ring's anti-aliased edge leaves no hairline; that margin is hole or channel anyway.
+          el("path", { d: LENS, fill: "black", stroke: "black", "stroke-width": 1, "clip-path": `url(#${id}-eyeL)` }),
+          el("path", { d: LENS, fill: "black", stroke: "black", "stroke-width": 1, "clip-path": `url(#${id}-eyeR)` }),
+        ]),
+        el("mask", { id: `${id}-mw`, maskUnits: "userSpaceOnUse", x: -63, y: -41, width: 126, height: 82 }, [el("polygon", { points: "-70,-70 70,70 -70,70", fill: "white" })]),
+        el("clipPath", { id: `${id}-eyeL` }, [el("polygon", { points: "0,0 -70,-70 -70,70" })]),
+        el("clipPath", { id: `${id}-eyeR` }, [el("polygon", { points: "0,0 70,-70 70,70" })]),
+        el("clipPath", { id: `${id}-view` }, [viewRect]),
+      ]),
+      ...(scene ? [back, screenG] : []),
+      ...(scene ? [desk, pane, targets.computer] : [body, zz]),
+    ]);
+    svg.style.overflow = "visible";
+    svg.style.display = "block";
+
+    const drawItem = (node, a, px) => {
+      const kind = node.item.getAttribute("data-item") || "";
+      if (kind === (a.item || "")) return;
+      node.item.setAttribute("data-item", a.item || "");
+      node.item.replaceChildren();
+      if (a.item === "pencil") {
+        node.item.append(
+          el("g", { stroke: "currentColor", "stroke-width": px(0.7), "vector-effect": "non-scaling-stroke" }, [
+            el("rect", { x: -14, y: -2.2, width: 4.5, height: 4.4, fill: "var(--cx-sand)" }),
+            el("rect", { x: -10, y: -2.2, width: 24, height: 4.4, fill: "var(--cx-sand-light)" }),
+            el("path", { d: "M 14 -2.2 L 20.5 0 L 14 2.2 Z", fill: "#E8D9B5" }),
+            el("path", { d: "M 18.4 -0.7 L 20.5 0 L 18.4 0.7 Z", fill: "currentColor", stroke: "none" }),
+          ]),
+        );
+      } else if (a.item === "magnifier") {
+        node.item.append(
+          el("path", { d: "M 3 0 L 13 0", stroke: "currentColor", "stroke-width": px(2.6), "stroke-linecap": "round" }),
+          el("circle", { cx: 23, cy: 0, r: 10.5, fill: "rgba(255,255,255,0.55)", stroke: "currentColor", "stroke-width": px(1.6) }),
+          el("path", { d: "M 17.5 -4.5 q 3 -3.5 7 -2.5", stroke: "currentColor", "stroke-width": px(0.9), fill: "none", opacity: 0.55, "stroke-linecap": "round" }),
+        );
+      } else if (a.item === "glass") {
+        node.item.append(
+          el("path", { d: `M 3 0 L ${LENS_AT - LENS_R} 0`, stroke: "currentColor", "stroke-width": px(2.6), "stroke-linecap": "round" }),
+          el("circle", { cx: LENS_AT, cy: 0, r: LENS_R, fill: "rgba(255,255,255,0.22)", stroke: "currentColor", "stroke-width": px(1.6) }),
+          el("path", { d: `M ${LENS_AT - 8} -5 q 3 -4.5 8.5 -3.5`, stroke: "#FFFFFF", "stroke-width": px(1.4), fill: "none", opacity: 0.8, "stroke-linecap": "round" }),
+        );
+      } else if (a.item === "slip") {
+        // A receipt, tilted the way a hand holds it.
+        node.item.append(slipShape(px(0.9)));
+      } else if (a.item === "chalk") {
+        node.item.append(el("rect", { x: 2, y: -1.5, width: 11, height: 3, rx: 1, fill: "var(--cx-chalk)", stroke: "currentColor", "stroke-width": px(0.6) }));
+      }
+    };
+    const drawArm = (node, a, side, px) => {
+      // An arm going round to the far shoulder fades out on its way and in on arrival, so it never sweeps across the body.
+      const far = side === -1 ? a.far || 0 : 0;
+      const [sx, sy] = far > 0 ? lerpPt([-SHOULDER[0], SHOULDER[1]], FAR_SHOULDER, far) : [SHOULDER[0] * side, SHOULDER[1]];
+      const fade = far > 0 && far < 1 ? Math.abs(2 * far - 1) : 1;
+      if (node.g.getAttribute("opacity") !== f(fade)) node.g.setAttribute("opacity", f(fade));
+      const [ex, ey] = a.elbow;
+      const [hx, hy] = a.hand;
+      const pts = [];
+      for (let i = 0; i <= ARM_SAMPLES; i++) {
+        const u = i / ARM_SAMPLES;
+        const w0 = (1 - u) * (1 - u);
+        const w1 = 2 * u * (1 - u);
+        const w2 = u * u;
+        pts.push([w0 * sx + w1 * ex + w2 * hx, w0 * sy + w1 * ey + w2 * hy]);
+      }
+      const seed = side === 1 ? 12 : 11;
+      node.line.setAttribute("d", wobbly(pts, seed, 0.7));
+      node.palm.setAttribute("cx", f(hx));
+      node.palm.setAttribute("cy", f(hy));
+      [-1, 0, 1].forEach((k, i) => {
+        const ang = a.fingers + k * 30;
+        const [ax, ay] = polar(ang, PALM_R);
+        const [bx, by] = polar(ang, PALM_R + FINGER);
+        node.fingers[i].setAttribute("d", wobbly([[hx + ax, hy + ay], [hx + (ax + bx) / 2, hy + (ay + by) / 2], [hx + bx, hy + by]], seed * 10 + k + 1, 0.35));
+      });
+      drawItem(node, a, px);
+      node.item.setAttribute("transform", `translate(${f(hx)} ${f(hy)}) rotate(${f(a.fingers)})`);
+    };
+    const drawEye = (node, side, e) => {
+      const cx0 = -EYE_CX * side;
+      node.setAttribute("transform", `translate(${f(cx0 + e.dx)} ${f(e.dy)}) scale(${f(e.sx)} ${f(e.sy)}) translate(${f(-cx0)} 0)`);
+    };
+
+    let size = opts.size;
+    let scale = size / MARK_W;
+    // Pencil lines keep a readable weight at the sidebar size: never thinner than 1.1 px on screen.
+    let px = (units) => f(Math.max(1.1, units * scale));
+    const resize = (next) => {
+      size = next;
+      scale = size / MARK_W;
+      px = (units) => f(Math.max(1.1, units * scale));
+      svg.setAttribute("width", f(box.w * scale));
+      svg.setAttribute("height", f(box.h * scale));
+      if (scene) {
+        for (const g of [...back.children, desk]) {
+          g.setAttribute("stroke-width", px(1.5));
+          for (const c of g.querySelectorAll("*")) c.setAttribute("vector-effect", "non-scaling-stroke");
+          g.setAttribute("vector-effect", "non-scaling-stroke");
+        }
+        for (const k of back.querySelectorAll(".cx-keys")) k.setAttribute("stroke-width", px(1));
+        for (const c of content.querySelectorAll("[stroke]")) c.setAttribute("vector-effect", "non-scaling-stroke");
+        for (const c of content.querySelectorAll("[data-sw]")) c.setAttribute("stroke-width", px(Number(c.getAttribute("data-sw"))));
+        // The light keeps a readable size on screen: never under 3 px of radius, as the sidebar's dot was 4 px.
+        led.setAttribute("r", f(Math.max(3, 4 * scale * LED[2]) / scale));
+        led.setAttribute("stroke-width", px(1.2));
+        led.setAttribute("vector-effect", "non-scaling-stroke");
+      }
+      hands.setAttribute("stroke-width", px(HAND_STROKE));
+      for (const p of hands.querySelectorAll("path, circle")) p.setAttribute("vector-effect", "non-scaling-stroke");
+      zz.setAttribute("stroke-width", px(1.5));
+      zz.setAttribute("vector-effect", "non-scaling-stroke");
+      for (const node of [armL, armR]) node.item.setAttribute("data-item", "");
+      draw(last);
+    };
+
+    let model = Object.freeze({ ...SCENE_MODEL, lang: opts.lang });
+    let lastTap = -Infinity;
+    let changed = performance.now();
+    // Away from the desk: where cx's middle is, in the scene's units from its seat, and how fast it moves; how far it has come forward
+    // (0 at the desk, 1 in the margin) and how big it is drawn there; a hop in progress, which lands where it set out for; where the
+    // body is sent, and beside what kind of block; when text last arrived. The page says where, and when; the body gets there at its
+    // own pace.
+    const walk = { on: false, p: [0, 0], v: [0, 0], g: 0, s: AWAY_SCALE, hop: null, goal: [0, 0], kind: "", wrote: -Infinity, at: performance.now(), view: null };
+    const WIDTH = BODY_W * AWAY_SCALE;
+    const hopTo = (to, now, how) => {
+      const d = Math.hypot(to[0] - walk.p[0], to[1] - walk.p[1]);
+      walk.hop = Object.freeze(
+        how === "step"
+          ? { from: [...walk.p], to: [...to], start: now, dur: Math.min(0.55, 0.3 + (0.03 * d) / WIDTH), height: Math.min(16, 6 + d * 0.05), lift: 0.5, g0: walk.g, g1: 1 }
+          : { from: [...walk.p], to: [...to], start: now, dur: MOTION.hop.dur, height: Math.min(MOTION.hop.riseMax, MOTION.hop.rise + d * MOTION.hop.perPx), lift: 1, g0: walk.g, g1: how === "home" ? 0 : 1 },
+      );
+    };
+    // Sends the body on: a hop when the place is far, or is the first place beside another kind of block; a glide otherwise. A body in
+    // the air lands first and goes on from there.
+    const sendTo = (goal, now, newKind) => {
+      walk.goal = goal;
+      if (walk.hop) return;
+      const d = Math.hypot(goal[0] - walk.p[0], goal[1] - walk.p[1]);
+      if (d > HOP_FAR * WIDTH || (newKind && d > HOP_FROM)) hopTo(goal, now, "step");
+    };
+    const advance = (now) => {
+      const dt = Math.min(0.05, Math.max(0, (now - walk.at) / 1000));
+      walk.at = now;
+      const h = walk.hop;
+      if (h) {
+        const u = clamp01((now - h.start) / 1000 / h.dur);
+        const e = easeInOut(u);
+        walk.p = [lerp(h.from[0], h.to[0], e), lerp(h.from[1], h.to[1], e) - h.height * Math.sin(Math.PI * u)];
+        walk.g = lerp(h.g0, h.g1, e);
+        if (u >= 1) {
+          walk.hop = null;
+          walk.p = [...h.to];
+          walk.v = [0, 0];
+          walk.g = h.g1;
+          if (walk.on) sendTo(walk.goal, now, false);
+        }
+      } else if (walk.on) {
+        for (const i of [0, 1]) {
+          walk.v[i] += (BODY_OMEGA * BODY_OMEGA * (walk.goal[i] - walk.p[i]) - 2 * BODY_OMEGA * walk.v[i]) * dt;
+          walk.p[i] += walk.v[i] * dt;
+        }
+      }
+    };
+    // What a frame needs of the walk: where cx is and how big, whether it is between two places, and how much it is writing — 1 while
+    // text arrives and for a quarter second after, then falling to 0 over the next 0.3 s. A settled walk is where everything has arrived: the still frames, and
+    // the reduced motion that draws only them, which show the pencil mid-stroke.
+    const snap = (now, settled) => {
+      const h = settled ? null : walk.hop;
+      const u = h ? clamp01((now - h.start) / 1000 / h.dur) : 1;
+      const p = settled ? walk.goal : walk.p;
+      const s = lerp(1, walk.s, settled ? (walk.on ? 1 : 0) : walk.g);
+      const from = h ? h.from : p;
+      const dx = walk.goal[0] - from[0];
+      const dy = walk.goal[1] - from[1];
+      const len = Math.hypot(dx, dy) || 1;
+      return Object.freeze({
+        x: p[0], y: p[1], scale: s, away: walk.on,
+        flight: h && u < 1 ? u : -1, lift: h ? h.lift : 0, dir: [dx / len, dy / len],
+        writing: settled ? 1 : clamp01(1 - (now - walk.wrote - 250) / 300),
+      });
+    };
+    const still = (st) => {
+      const base = STATE[st].at(opts.stillAt);
+      if (!scene) return base;
+      const at = snap(performance.now(), true);
+      return { ...sceneAt(st, opts.stillAt, opts.stillAt, Infinity, base, model, at), trip: at };
+    };
+    let last = scene ? sceneAt(opts.state, reduced ? opts.stillAt : 0, 0, Infinity, STATE[opts.state].at(reduced ? opts.stillAt : 0), model, snap(performance.now(), true)) : STATE[opts.state].at(reduced ? opts.stillAt : 0);
+    const show = (node, on) => { node.style.display = on ? "" : "none"; };
+    const drawn = new Map();
+    const shape = (node, d) => { if (drawn.get(node) !== d) { drawn.set(node, d); node.setAttribute("d", d); } };
+    const drawLines = (chars, opacity, withCaret) => {
+      const count = Math.ceil(chars / LINE_CHARS);
+      const first = Math.max(0, count - LINES_MAX);
+      const width = SCR.w - 18;
+      let end = null;
+      lines.forEach((line, i) => {
+        const at = first + i;
+        const w = at >= count ? 0 : at < count - 1 ? width : Math.max(6, ((chars - at * LINE_CHARS) / LINE_CHARS) * width);
+        shape(line, w > 0 ? mapped(toFace, [roundRect(-SCR.w / 2 + 9, -SCR.h / 2 + 8 + i * LINE_H, Math.round(w), LINE_BAR, LINE_BAR / 2)]) : "");
+        line.setAttribute("opacity", f(opacity));
+        if (w > 0) end = [-SCR.w / 2 + 9 + Math.round(w), -SCR.h / 2 + 8 + i * LINE_H];
+      });
+      shape(caret, withCaret && end ? mapped(toFace, [roundRect(Math.min(end[0] + 3, SCR.w / 2 - 9), end[1] - 1.5, 4, LINE_BAR + 3, 0.8)]) : "");
+    };
+    const drawReason = (reason) => { for (const key in symbols) show(symbols[key], key === reason); };
+    const drawLed = (reading) => {
+      const off = reading === "none" || reading === "asleep";
+      const colour = reading === "starting" ? "var(--cx-warn)" : off ? "var(--cx-quiet)" : "var(--cx-good)";
+      led.setAttribute("fill", reading === "heard" ? "none" : colour);
+      led.setAttribute("stroke", colour);
+      led.setAttribute("opacity", off ? "0.35" : "1");
+      const pulsing = !reduced && (reading === "working" || reading === "starting");
+      // The sidebar's dot pulsed while the box worked or started; the same pulse, run by the document so the frame loop can sleep.
+      if (pulsing && !led.firstChild) led.appendChild(el("animate", { attributeName: "opacity", values: "0.3;1;0.3", dur: "1.6s", repeatCount: "indefinite" }));
+      if (!pulsing) led.replaceChildren();
+    };
+    const drawScene = (fr, t) => {
+      const m = model;
+      const machine = machineOf(state, m);
+      screenOn.setAttribute("opacity", f(fr.screen));
+      content.setAttribute("opacity", f(Math.min(1, fr.screen * 1.4)));
+      const lit = fr.screen > 0.02;
+      show(bootG, lit && fr.boot > 0 && fr.boot < 0.999 && fr.screen > 0.3);
+      const bw = Math.round(BOOT.w * clamp01(fr.boot) * 2) / 2;
+      shape(bootFill, bw > 0.5 ? mapped(toFace, [roundRect(BOOT.x, BOOT.y, bw, BOOT.h, BOOT.h / 2)]) : "");
+      show(reasonG, lit && machine === "refused");
+      if (machine === "refused") drawReason(m.reason);
+      const on = lit && (machine === "on" || machine === "unwatched");
+      show(toolG, on && state === "analysing");
+      if (on && state === "analysing") pulse.setAttribute("opacity", f(reduced ? 1 : 0.3 + 0.7 * (0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / 1.6))));
+      // The screen shows what is being written: the answer while text arrives, or else the person's draft for as long as it is in the
+      // composer — typed or paused — and the message just sent while cx reads it; the caret while the draft is still a draft.
+      const chars = on && state !== "analysing" ? (state === "writing" ? m.text : m.draft) : 0;
+      drawLines(chars, state === "writing" ? 0.75 : 0.5, state === "ready" && !m.reading && !m.thinking);
+      show(linesG, chars > 0);
+      show(cornerG, on && m.low);
+      // The struck key lights while the hand is down on it.
+      shape(keyLight, fr.hit > 0.5 ? KEY_LIGHT[fr.hitKey] : "");
+      drawLed(m.dot);
+    };
+    const draw = (fr, t) => {
+      const s = fr.squash;
+      body.setAttribute("transform", `translate(0 ${f(fr.dy)}) rotate(${f(fr.rotate)}) scale(${f(1 / Math.sqrt(s))} ${f(s)})`);
+      drawEye(eyeL, 1, fr.eyes);
+      drawEye(eyeR, -1, fr.eyesR || fr.eyes);
+      drawArm(armL, fr.pose.left, -1, px);
+      const unlanded = scene && model.catching === "reach" && !model.receipt;
+      if (armL.item.getAttribute("data-unlanded") !== String(unlanded)) { armL.item.setAttribute("data-unlanded", String(unlanded)); armL.item.style.visibility = unlanded ? "hidden" : ""; }
+      drawArm(armR, fr.pose.right, 1, px);
+      // The z rides up and fades on each breath; nothing shows at all outside sleep.
+      const z = fr.zz;
+      zz.setAttribute("opacity", f(z > 0 && z < 1 ? 0.5 * Math.sin(z * Math.PI) : 0));
+      zz.setAttribute("transform", `translate(${f(52 + 4 * z)} ${f(-48 - 12 * z)}) scale(${f(0.8 + 0.4 * z)})`);
+      if (scene) {
+        const at = fr.trip || snap(performance.now(), true);
+        const ride = at.x || at.y || at.scale !== 1 ? `translate(${f(at.x)} ${f(at.y)}) scale(${f(at.scale)})` : "";
+        rider.setAttribute("transform", ride);
+        targets.cx.setAttribute("transform", ride);
+        // Cut to the view while cx stands in the stream; a hop to or from the desk crosses the frame and is drawn whole.
+        const cut = walk.on && walk.view !== null && !(walk.hop && walk.hop.lift === 1) ? `url(#${id}-view)` : "";
+        if ((pane.getAttribute("clip-path") || "") !== cut) { if (cut) pane.setAttribute("clip-path", cut); else pane.removeAttribute("clip-path"); }
+        // The arms keep their thickness for cx's size as it comes forward, so a long reach reads as an arm, not a thread.
+        const armWidth = f(Math.max(1.1, HAND_STROKE * scale) * at.scale);
+        if (hands.getAttribute("stroke-width") !== armWidth) hands.setAttribute("stroke-width", armWidth);
+        // The thought dots come one after another and start again, while the model thinks; with reduced motion all three show.
+        const think = fr.think || 0;
+        thoughts.setAttribute("opacity", f(0.55 * think));
+        const beat = reduced || t === undefined ? 0.9 : ((t * 0.8) % 1);
+        [...thoughts.children].forEach((dot, i) => dot.setAttribute("opacity", beat > 0.12 + i * 0.22 ? "1" : "0.15"));
+        drawScene(fr, t === undefined ? opts.stillAt : t);
+      }
+      last = fr;
+    };
+
+    let state = opts.state;
+    let entered = performance.now();
+    let blendFrom = null;
+    let blendStart = 0;
+    let raf = 0;
+    let timer = 0;
+    let lastDrawn = 0;
+    let placed = false;
+    let closed = false;
+    const stop = () => {
+      if (raf) cancelAnimationFrame(raf);
+      if (timer) clearTimeout(timer);
+      raf = 0;
+      timer = 0;
+    };
+    // The animation owns its frame and its timer: a closed page or `destroy` cancels both for good, and an element that was in the
+    // document and has left it cancels both until a signal finds it there again. A frame or a timer that outlived its page would draw
+    // into a document that is gone.
+    const dispose = () => { stop(); closed = true; };
+    const frame = () => {
+      if (closed) return;
+      if (svg.isConnected) placed = true;
+      else if (placed) { stop(); return; }
+      if (!raf) raf = requestAnimationFrame(tick);
+    };
+    const tick = (now) => {
+      raf = 0;
+      if (closed || (placed && !svg.isConnected)) { stop(); return; }
+      // A frame's time can fall a little before the moment its state was entered: the state starts at zero, never before.
+      const t = Math.max(0, (now - entered) / 1000);
+      const spec = STATE[state];
+      const tapAge = Math.max(0, (now - lastTap) / 1000);
+      if (scene) advance(now);
+      const at = scene ? snap(now, false) : null;
+      let fr = scene ? sceneAt(state, t, Math.max(0, (now - changed) / 1000), tapAge, spec.at(t), model, at) : spec.at(t);
+      let blending = false;
+      if (blendFrom) {
+        const u = (now - blendStart) / 1000 / BLEND;
+        if (u < 1) { fr = lerpFrame(blendFrom, fr, easeInOut(u)); blending = true; } else blendFrom = null;
+      }
+      if (spec.motion === "slow" && !blending && now - lastDrawn < SLOW_MS) { frame(); return; }
+      if (scene) fr = { ...fr, trip: at };
+      draw(fr, t);
+      lastDrawn = now;
+      // The scene's own motion: a move between two places, the pencil's strokes while text arrives, the yawn cycle while sleep is due,
+      // the dots while the model thinks, and a keystroke for its length.
+      const settling = scene && walk.on && (Math.hypot(walk.goal[0] - walk.p[0], walk.goal[1] - walk.p[1]) > 0.2 || Math.hypot(walk.v[0], walk.v[1]) > 0.2 || (state === "writing" && at.writing > 0));
+      const moving = scene && (at.flight >= 0 || walk.hop !== null || settling || (state === "ready" && (model.sleepy || model.thinking || (model.typing && tapAge < TAP + 0.05))));
+      if (blending || moving || spec.motion === "continuous" || spec.motion === "slow") { frame(); return; }
+      if (spec.motion === "blink") {
+        // Sleep until the next blink, then run frames for its length.
+        const u = ((t - spec.blinkAt) % spec.period + spec.period) % spec.period;
+        if (u < 0.2) { frame(); return; }
+        timer = setTimeout(() => { timer = 0; frame(); }, Math.max(0, (spec.period - u) * 1000));
+      }
+    };
+    const set = (next) => {
+      if (!STATES.includes(next)) throw new Error(`cx: unknown state ${next}`);
+      if (next === state) return;
+      stop();
+      state = next;
+      svg.setAttribute("data-state", next);
+      if (scene) svg.setAttribute("data-machine", machineOf(next, model));
+      entered = performance.now();
+      if (reduced) { draw(still(next)); return; }
+      blendFrom = last;
+      blendStart = entered;
+      frame();
+    };
+    // The scene's signals: a partial model, and one keystroke of the person's. A change blends from the frame on screen as a state change does.
+    // A signal that only changes what the screen, the light or the words show is drawn on the next frame; cx's pose is not blended again,
+    // so text arriving many times a second leaves the pencil moving as it moves.
+    const SCREEN_ONLY = Object.freeze(["draft", "text", "dot", "lang", "low"]);
+    const redraw = () => {
+      if (reduced) { draw(still(state)); return; }
+      if (timer) { clearTimeout(timer); timer = 0; }
+      frame();
+    };
+    const kick = () => {
+      if (reduced) { draw(still(state)); return; }
+      blendFrom = last;
+      blendStart = performance.now();
+      if (timer) { clearTimeout(timer); timer = 0; }
+      frame();
+    };
+    const update = (partial) => {
+      if (!scene) throw new Error("cx: no scene to update");
+      const next = { ...model };
+      for (const key in partial || {}) {
+        if (!(key in SCENE_MODEL) || key === "key") throw new Error(`cx: unknown scene signal ${key}`);
+        next[key] = partial[key];
+      }
+      if (next.reason !== undefined && !REASONS.includes(next.reason)) throw new Error(`cx: unknown reason ${next.reason}`);
+      if (!DOTS.includes(next.dot)) throw new Error(`cx: unknown dot ${next.dot}`);
+      if (![false, "watch", "reach"].includes(next.catching)) throw new Error(`cx: unknown catching ${next.catching}`);
+      if (Object.keys(next).every((key) => next[key] === model[key])) return;
+      const posed = Object.keys(next).some((key) => next[key] !== model[key] && !SCREEN_ONLY.includes(key));
+      // Text arriving is what moves the pencil's point in its small strokes; they stop a little over half a second after the text does.
+      if (next.text > model.text) walk.wrote = performance.now();
+      model = Object.freeze(next);
+      svg.setAttribute("data-machine", machineOf(state, model));
+      if (!posed) { redraw(); return; }
+      changed = performance.now();
+      kick();
+    };
+    // Sends cx into the stream's margin, or back to its seat with `null`. The point says, in client pixels, beside what cx stands: `y` the
+    // middle of the line being produced — the last line of text, a tool call's line, a thinking block's summary — and `start` where that
+    // line begins, the answer's left edge; `left`, `top` and `bottom` bound the stream's view; `shift`, how far a scroll has moved the
+    // line since cx was last placed. cx stands left of `start` with the pencil's point MARGIN_GAP clear of it, as big as the margin allows
+    // up to AWAY_SCALE, beside the line wherever it is: a scroll carries cx with it as one piece, out of the view and back, cut to the
+    // view; only a line still in view keeps cx above the view's foot. Nothing of cx ever lies over the answer. Where the margin cannot hold cx at its desk size, cx stays at its desk,
+    // or goes back to it, and does the work there. Leaving the desk, coming back, the first place beside another kind of block and any
+    // far move are hops; the rest glide. With reduced motion nothing glides or hops: cx is drawn where it would come to rest. Returns
+    // whether cx is out.
+    const away = (point) => {
+      if (!scene) throw new Error("cx: no scene to leave");
+      const now = performance.now();
+      advance(now);
+      let goal = null;
+      let s = walk.s;
+      if (point) {
+        const r = svg.getBoundingClientRect();
+        // Not laid out yet, or not a place: nothing to go by until the page asks again.
+        if (!r.width || ![point.y, point.start, point.left, point.top, point.bottom].every(Number.isFinite)) return walk.on;
+        const k = r.width / box.w;
+        const X = (x) => (x - r.left) / k + box.x;
+        const Y = (y) => (y - r.top) / k + box.y;
+        const edge = X(point.start - MARGIN_GAP);
+        s = Math.min(AWAY_SCALE, (edge - X(point.left)) / (FOOT.l + FOOT.r));
+        if (s >= AWAY_MIN) {
+          const hi = Y(point.bottom) - FOOT.b * s;
+          goal = [edge - FOOT.r * s, point.y <= point.bottom ? Math.min(Y(point.y), hi) : Y(point.y)];
+          walk.view = [X(point.left), Y(point.top), X(point.start) - X(point.left), Y(point.bottom) - Y(point.top)];
+          viewRect.setAttribute("x", f(walk.view[0])); viewRect.setAttribute("y", f(walk.view[1]));
+          viewRect.setAttribute("width", f(walk.view[2])); viewRect.setAttribute("height", f(walk.view[3]));
+          // A scroll moves the line and cx together, as one piece: no glide is left to catch up.
+          const dy = walk.on && Number.isFinite(point.shift) ? point.shift / k : 0;
+          if (dy !== 0) {
+            walk.p = [walk.p[0], walk.p[1] + dy];
+            walk.goal = [walk.goal[0], walk.goal[1] + dy];
+            if (walk.hop) walk.hop = Object.freeze({ ...walk.hop, from: [walk.hop.from[0], walk.hop.from[1] + dy], to: [walk.hop.to[0], walk.hop.to[1] + dy] });
+          }
+        }
+      }
+      if (!goal) {
+        if (!walk.on) return false;
+        walk.on = false;
+        walk.kind = "";
+        walk.goal = [0, 0];
+        hopTo(walk.goal, now, "home");
+      } else {
+        const leaving = !walk.on;
+        const newKind = state !== walk.kind;
+        walk.on = true;
+        walk.kind = state;
+        walk.s = s;
+        if (leaving) {
+          walk.goal = goal;
+          hopTo(goal, now, "leave");
+        } else sendTo(goal, now, newKind);
+      }
+      svg.setAttribute("data-away", String(walk.on));
+      if (reduced) {
+        walk.hop = null;
+        walk.p = [...walk.goal];
+        walk.v = [0, 0];
+        walk.g = walk.on ? 1 : 0;
+        draw(still(state));
+        return walk.on;
+      }
+      if (timer) { clearTimeout(timer); timer = 0; }
+      frame();
+      return walk.on;
+    };
+
+    // How far below its line's middle cx's figure reaches when it stands out beside a line beginning at `start` in a view whose left edge is
+    // `left`, in client px, a breath's bob over it, at the size the margin gives it there: the room a line keeps under it for cx to stand.
+    // The figure's reach is read from its poses as they are drawn, and the room kept for it only grows.
+    let reachSeen = FOOT.b;
+    const reach = (start, left) => {
+      if (!scene) return 0;
+      const r = svg.getBoundingClientRect();
+      if (!r.width || !Number.isFinite(start) || !Number.isFinite(left)) return 0;
+      const figure = typeof rider.getBBox === "function" ? rider.getBBox() : undefined;
+      if (figure !== undefined) reachSeen = Math.max(reachSeen, figure.y + figure.height + 3);
+      const k = r.width / box.w;
+      return reachSeen * Math.min(AWAY_SCALE * k, (start - MARGIN_GAP - left) / (FOOT.l + FOOT.r));
+    };
+
+    const tap = () => {
+      if (!scene) return;
+      lastTap = performance.now();
+      // The hands take turns: the right hand's keys are the first two, the far hand's the other two.
+      const key = model.key > 1 ? Math.floor(Math.random() * 2) : 2 + Math.floor(Math.random() * 2);
+      model = Object.freeze({ ...model, key });
+      if (!reduced && !raf) { if (timer) { clearTimeout(timer); timer = 0; } frame(); }
+    };
+
+    if (scene) svg.setAttribute("data-machine", machineOf(state, model));
+    resize(size);
+    container.appendChild(svg);
+    if (!reduced) frame();
+    if (typeof addEventListener === "function") addEventListener("pagehide", (event) => { if (!event.persisted) dispose(); });
+
+    // Where the receipt sits in the page, in client px, and how wide it is drawn: the one in cx's hand while it holds one, else the
+    // place the receipt pose puts it. What flies to cx lands here, at this width.
+    const slipPoint = () => {
+      const held = armL.item.getAttribute("data-item") === "slip" ? armL.item.getBoundingClientRect() : null;
+      const m = body.getScreenCTM();
+      if (!m) return null;
+      const w = 27 * Math.hypot(m.a, m.b);
+      if (held && held.width > 0) return Object.freeze({ x: held.left + held.width / 2, y: held.top + held.height / 2, w });
+      const a = (-105 * Math.PI) / 180;
+      const mid = [SLIP_AT[0] + SLIP_MID[0] * Math.cos(a) - SLIP_MID[1] * Math.sin(a), SLIP_AT[1] + SLIP_MID[0] * Math.sin(a) + SLIP_MID[1] * Math.cos(a)];
+      const pt = new DOMPoint(mid[0], mid[1]).matrixTransform(m);
+      return Object.freeze({ x: pt.x, y: pt.y, w });
+    };
+    // The same, as the matrix from the receipt's own units to client px: the receipt in the hand while the hand holds one, drawn or
+    // about to land, else where the receipt pose puts it. Something drawn with `slip()` under this matrix lies exactly on cx's receipt:
+    // the same size, place, angle and line weight, so what flies to cx can end on it and give way to it without a seam.
+    const slipMatrix = () => {
+      const own = armL.item.getAttribute("data-item") === "slip" ? armL.item.getScreenCTM() : null;
+      if (own) return DOMMatrix.fromMatrix(own);
+      const arm = armL.g.getScreenCTM();
+      return arm ? DOMMatrix.fromMatrix(arm).translate(SLIP_AT[0], SLIP_AT[1]).rotate(-105) : null;
+    };
+    // Whether the receipt is drawn in cx's hand now.
+    const slipShown = () => armL.item.getAttribute("data-item") === "slip" && armL.item.style.visibility !== "hidden";
+    const sceneApi = scene
+      ? Object.freeze({
+          update,
+          tap,
+          away,
+          reach,
+          slipPoint,
+          slipMatrix,
+          slipShown,
+          slip: () => slipShape(px(0.9)),
+          targets: Object.freeze(targets),
+          get model() { return model; },
+          get machine() { return machineOf(state, model); },
+        })
+      : undefined;
+    return Object.freeze({
+      element: svg,
+      get state() { return state; },
+      get size() { return size; },
+      set,
+      resize,
+      scene: sceneApi,
+      destroy: () => { dispose(); svg.remove(); },
+    });
+  };
+
+  return Object.freeze({ STATES, REASONS, DOTS, WORDS, mount, MARK_W, BOX: VB, SCENE_BOX: SCENE_VB, COMPUTER_BOX, COMPUTER_PTS, TARGETS, hit: hitOf, machine: machineOf, MOTION, SLIP_MID, slip: (stroke = 0.9) => slipShape(stroke) });
+});
+</script>
+<script>
+(() => {
+  "use strict";
+  const board = window.cxBoard;
+  const root = document.documentElement;
+  const zh = () => !/^en\b/i.test(root.dataset.locale || board?.context?.locale || root.lang);
+
+  /** Every line the page prints, by language, as the signed sheet draws it. */
+  const WORDS = {
+    zh: {
+      seconds: (n) => `${n} 秒`, minutes: (n) => `${n} 分钟`, hoursMinutes: (hr, m) => `${hr} 小时 ${m} 分钟`,
+      now: { sent: "正在处理" },
+      ran: (t) => `已运行 ${t}`,
+      waiting: "等待 cx 回答",
+      paused: "已暂停",
+      done: (at, t) => `${at} 完成，用时 ${t}`,
+      stopped: (at) => `${at} 已停止`,
+      limit: (at) => `${at} 用时超过 30 分钟，已停止`,
+      error: (at) => `${at} 出错，已停止`,
+      off: "cx 的电脑关机，已中断",
+      named: (words, name) => `${words}“${name}”`,
+      rename: "重命名", name: "名称",
+      group: { going: "进行中", done: "已完成", cut: "未完成" },
+      empty: "cx 交给帮手的事会显示在这里。",
+      page: "帮手",
+    },
+    en: {
+      seconds: (n) => `${n} sec`, minutes: (n) => `${n} min`, hoursMinutes: (hr, m) => `${hr} hr ${m} min`,
+      now: { sent: "Working on it" },
+      ran: (t) => `Running for ${t}`,
+      waiting: "Waiting for cx's answer",
+      paused: "Paused",
+      done: (at, t) => `Done in ${t} · ${at}`,
+      stopped: (at) => `Stopped · ${at}`,
+      limit: (at) => `Stopped at the 30-minute limit · ${at}`,
+      error: (at) => `Stopped by an error · ${at}`,
+      off: "Interrupted when cx's computer switched off",
+      named: (words, name) => `${words} “${name}”`,
+      rename: "Rename", name: "Name",
+      group: { going: "In progress", done: "Completed", cut: "Not finished" },
+      empty: "What cx hands to helpers will be here.",
+      page: "Helpers",
+    },
+  };
+  const w = () => (zh() ? WORDS.zh : WORDS.en);
+
+  // A face is a number the package gives each helper in order: the next of 108 ordered pairs of eleven colours. The colours stand round a
+  // ring in an order in which neighbours differ most; face n in the first round takes a colour and its neighbour, in the next round the
+  // colour two along, and so on. Forest with sand, either way round, is left out: forest left and sand right is cx.
+  const RING = ["lake", "rust", "sand", "lilac", "cobalt", "olive", "mauve", "forest", "jade", "plum", "rose"];
+  const OWN = new Set(["forest", "sand"]);
+  const PAIRS = [];
+  for (let round = 0; round < RING.length - 1; round++) for (let at = 0; at < RING.length; at++) {
+    const left = RING[at], right = RING[(at + 1 + round) % RING.length];
+    if (!(OWN.has(left) && OWN.has(right))) PAIRS.push([left, right]);
+  }
+  const token = (name) => (OWN.has(name) ? `var(--cx-${name})` : `var(--helper-${name})`);
+  const pair = (n) => PAIRS[((n % PAIRS.length) + PAIRS.length) % PAIRS.length];
+
+  const h = (tag, attrs, ...children) => {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs ?? {})) {
+      if (value === undefined || value === null || value === false) continue;
+      if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? "" : String(value));
+    }
+    for (const child of children.flat(Infinity)) if (child !== undefined && child !== null && child !== false) node.append(child);
+    return node;
+  };
+  const icon = (...paths) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "icon"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+    for (const d of paths) { const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); path.setAttribute("d", d); svg.append(path); }
+    return svg;
+  };
+  const alertIcon = () => icon("M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z", "M12 8v5", "M12 16.4v.1");
+
+  /** A card's file read: its front matter, one fact a line as JSON, and the task under it. */
+  function readCard(file, raw) {
+    const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(raw);
+    if (match === null) return undefined;
+    const facts = {};
+    for (const line of match[1].split(/\r?\n/)) {
+      const at = line.indexOf(": ");
+      if (at <= 0) continue;
+      try { facts[line.slice(0, at)] = JSON.parse(line.slice(at + 2)); } catch { facts[line.slice(0, at)] = line.slice(at + 2); }
+    }
+    const at = Date.parse(facts.at), ended = Date.parse(facts.ended);
+    if (facts.kind !== "helper" || !Number.isFinite(at)) return undefined;
+    return { file, raw, name: String(facts.title ?? ""), face: Number.isInteger(facts.face) ? facts.face : 0, state: String(facts.state ?? "done"), at, ended: Number.isFinite(ended) ? ended : undefined, took: typeof facts.took === "number" ? facts.took : undefined };
+  }
+
+  const page = document.getElementById("page");
+  /** The cards as last read, by file, each with the time its file had then. */
+  const cards = new Map();
+  /** What the seller has open on a card: its name's field. */
+  const naming = new Set();
+
+  /** A time since in the build's own words: seconds under a minute, then minutes, then hours and minutes. */
+  const span = (seconds) => seconds < 60 ? w().seconds(Math.max(1, Math.floor(seconds))) : seconds < 3600 ? w().minutes(Math.floor(seconds / 60)) : w().hoursMinutes(Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60));
+  const clock = (ms) => { const at = new Date(ms); return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`; };
+  const ran = (card) => Math.max(0, Math.floor((Date.now() - card.at) / 1000));
+  const atWork = (card) => card.state === "working" || card.state === "waiting" || card.state === "paused";
+  const groupOf = (card) => (atWork(card) ? "going" : card.state === "done" ? "done" : "cut");
+
+  /** The line that says how it stands or how it ended. */
+  function nowLine(card) {
+    const end = card.ended ?? card.at;
+    if (card.state === "working") return [w().now.sent];
+    if (card.state === "waiting") return [w().waiting];
+    if (card.state === "paused") return [w().paused];
+    if (card.state === "done") return [w().done(clock(end), span(card.took ?? Math.round((end - card.at) / 1000)))];
+    if (card.state === "stopped") return [w().stopped(clock(end))];
+    return [alertIcon(), card.state === "timeout" ? w().limit(clock(end)) : card.state === "failed" ? w().error(clock(end)) : w().off];
+  }
+
+  /** A face: cx's figure in the card's two colours. At work it works, waiting or ended well it rests, ended badly it sleeps. */
+  function face(card) {
+    const fig = h("span", { class: "hc-fig" });
+    const state = card.state === "working" ? "analysing" : card.state === "done" || card.state === "waiting" ? "ready" : "sleeping";
+    queueMicrotask(() => { try { window.CxCharacter.mount(fig, { size: 28, state, motion: "auto" }); } catch { /* the figure is a picture; the card stands without it */ } });
+    const [left, right] = pair(card.face);
+    return h("span", { class: "hc-face", "aria-hidden": "true", "data-face": `${left}-${right}`, style: `--a: ${token(left)}; --b: ${token(right)};` }, fig);
+  }
+
+  /** Writes the seller's name into the card's file, read again first, so what the package wrote meanwhile stays. */
+  async function rename(card, value) {
+    const name = value.trim();
+    naming.delete(card.file);
+    if (name === "" || name === card.name) { draw(); return; }
+    card.name = name;
+    draw();
+    try {
+      const raw = await board.read(card.file);
+      const next = raw.replace(/^title: .*$/m, `title: ${JSON.stringify(name)}`);
+      if (next !== raw) await board.write(card.file, next);
+    } catch { /* the board's next read draws the name the file holds */ }
+  }
+
+  /** The name fields open while the page draws again: each is put back as it stands, so its words, its caret and the keyboard stay. */
+  let fields = new Map();
+  function card(one) {
+    const field = () => {
+      const kept = fields.get(one.file);
+      if (kept !== undefined) return kept;
+      const input = h("input", { type: "text", class: "entry-field", dir: "auto", "aria-label": w().name, autocomplete: "off", value: one.name, "data-act": "name-field",
+        onkeydown: (event) => {
+          if (event.isComposing) return;
+          if (event.key === "Enter") { event.preventDefault(); input.dataset.settled = "1"; rename(one, input.value).then(() => focusOn(one, '[data-act="name"]')); }
+          if (event.key === "Escape") { event.preventDefault(); input.dataset.settled = "1"; naming.delete(one.file); draw(); focusOn(one, '[data-act="name"]'); }
+        },
+        onblur: () => { if (input.dataset.settled) return; input.dataset.settled = "1"; rename(one, input.value); } });
+      return input;
+    };
+    const name = naming.has(one.file) ? field()
+      : h("h3", { class: "hc-name", id: `${one.file}-name`, dir: "auto" },
+        h("button", { type: "button", "data-act": "name", title: w().rename, "aria-label": w().named(w().rename, one.name), onclick: () => { naming.add(one.file); draw(); const input = document.getElementById(one.file)?.querySelector('[data-act="name-field"]'); input?.focus(); input?.select(); } }, one.name));
+    const age = atWork(one) ? h("span", { class: "hc-age", "data-age": one.file, "aria-label": w().ran(span(ran(one))) }, span(ran(one))) : null;
+    const head = h("div", { class: "hc-head" }, face(one),
+      h("div", { class: "hc-id" }, h("div", { class: "hc-top" }, name), h("p", { class: "hc-now" }, h("span", { class: "hc-line" }, nowLine(one)), age)));
+    return h("li", {}, h("article", { class: "entry hc-card", id: one.file, "data-state": one.state, "aria-labelledby": naming.has(one.file) ? undefined : `${one.file}-name`, "aria-label": naming.has(one.file) ? one.name : undefined }, head));
+  }
+
+  const focusOn = (one, selector) => document.getElementById(one.file)?.querySelector(selector)?.focus({ preventScroll: true });
+
+  /** The page drawn from the cards: three groups in the order a seller looks for them, at work, done, not finished; newest first in each. */
+  function draw() {
+    const held = document.activeElement?.closest?.(".hc-card") ? { file: document.activeElement.closest(".hc-card").id, act: document.activeElement.dataset.act } : undefined;
+    fields = new Map([...page.querySelectorAll('[data-act="name-field"]')].filter((input) => naming.has(input.closest(".hc-card")?.id) && !input.dataset.settled).map((input) => [input.closest(".hc-card").id, input]));
+    const caret = held?.act === "name-field" ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : undefined;
+    const shown = [...cards.values()].sort((a, b) => b.at - a.at || (a.file < b.file ? 1 : -1));
+    const groups = ["going", "done", "cut"].map((key) => ({ key, cards: shown.filter((one) => groupOf(one) === key) })).filter((group) => group.cards.length > 0);
+    page.replaceChildren(shown.length === 0 ? h("p", { class: "board-empty" }, w().empty)
+      : groups.length === 1 ? h("ul", { class: "hc-list" }, groups[0].cards.map(card))
+        : h("div", { class: "hc-groups", "data-n": String(groups.length) }, groups.map((group) =>
+          h("section", { class: "hc-group", "data-group": group.key, "aria-labelledby": `group-${group.key}` }, h("h2", { id: `group-${group.key}` }, w().group[group.key]), h("ul", { class: "hc-list" }, group.cards.map(card))))));
+    if (held && !naming.has(held.file) && held.act !== "name-field") document.getElementById(held.file)?.querySelector(`[data-act="${held.act}"]`)?.focus({ preventScroll: true });
+    if (held?.act === "name-field" && naming.has(held.file)) { const input = document.getElementById(held.file)?.querySelector('[data-act="name-field"]'); input?.focus({ preventScroll: true }); if (caret !== undefined) input?.setSelectionRange(caret[0], caret[1]); }
+    fields = new Map();
+  }
+
+  /** Reads the tab: each card whose file is new or changed is read again; a card the seller is naming keeps its field until it is left. */
+  let reading = Promise.resolve();
+  const read = () => (reading = reading.then(async () => {
+    let listed;
+    try { listed = await board.list(); } catch { return; }
+    const want = new Map(listed.filter((row) => /-subagent-[A-Za-z0-9_-]+\.md$/.test(row.file) && !row.file.includes("/")).map((row) => [row.file, row]));
+    let changed = false;
+    for (const file of [...cards.keys()]) if (!want.has(file)) { cards.delete(file); changed = true; }
+    await Promise.all([...want.values()].map(async (row) => {
+      const had = cards.get(row.file);
+      if (had !== undefined && had.modified === row.modified) return;
+      let raw;
+      try { raw = await board.read(row.file); } catch { return; }
+      const one = readCard(row.file, raw);
+      if (one === undefined) { if (had !== undefined) { cards.delete(row.file); changed = true; } return; }
+      if (had !== undefined && naming.has(row.file)) one.name = had.name;
+      cards.set(row.file, { ...one, modified: row.modified });
+      changed = true;
+    }));
+    if (changed || page.childElementCount === 0) draw();
+  }));
+
+  if (board === undefined) { page.replaceChildren(h("p", { class: "board-empty" }, w().empty)); return; }
+  board.on("files", read);
+  board.on("context", () => { root.lang = zh() ? "zh" : "en"; document.title = w().page; draw(); });
+  root.lang = zh() ? "zh" : "en";
+  document.title = w().page;
+  read();
+  // How long each helper at work has run, kept up to the second.
+  setInterval(() => {
+    for (const one of cards.values()) if (atWork(one)) { const at = page.querySelector(`[data-age="${CSS.escape(one.file)}"]`); const words = span(ran(one)); if (at && at.textContent !== words) { at.textContent = words; at.setAttribute("aria-label", w().ran(words)); } }
+  }, 1000);
+})();
+</script>
+</body>
+</html>
