@@ -5,39 +5,49 @@ Install it in your own pi with `pi install npm:@comchatx/cx-subagents`.
 ## How it is built
 
 - **Two extensions, `extensions/board-cards.ts` and `extensions/hand-out.ts`.** pi loads them as TypeScript; there is no build. It ships no skill. When cx hands work to the background is cx's own judgement with pi-subagents' `subagent` tool. `hand-out.ts` keeps one sentence beside that tool's guidelines: cx gets it once in each request, and a fresh helper none. A helper started with `context: "fork"` carries cx's conversation, and the sentence with it, because that is what a fork is. Whether a helper may hand work on is pi-subagents' own setting, which `agents/helper.md` leaves as pi-subagents sets it.
-- **What it listens to.** pi-subagents emits `subagent:async-started` and `subagent:async-complete` on the session's event bus. The start carries the run id and the `subagent` call's id, and redacts the task. The extension takes the task from pi's own `tool_call` event for that call. The end carries the result.
-- **The card.** It goes in `board/<person>/todo/` under the session's directory, which in cx's computer is `/tenant`. The person is the one directory under `board/`; a board with none, or with more than one, gets no card. This is the board's shape as `cx-board` describes it. The extension imports nothing from `cx-board` and calls nothing of the board's.
+- **What it listens to.** pi-subagents emits `subagent:async-started` and `subagent:async-complete` on the session's event bus. The start carries the run id, the `subagent` call's id and the run's folder, and redacts the task. The extension takes the task from pi's own `tool_call` event for that call. The end carries the result's state and its duration.
+- **The tab.** `comchatx.board` declares the board tab 帮手 / Helpers and its page, `page/helpers.html`. The page draws from the tab's files through the board's `cxBoard` and writes only a card's `title` line, when the seller renames a helper. It draws each face with cx's figure as the board hands every page, `window.CxCharacter`, in the pair's two colours, and carries no figure of its own; on a board that hands none, a face's place is left empty and the card stands as it is. The one colour the board's theme values lack, the outline of what ended with no result, the page carries itself.
+- **The card.** It goes in `board/<person>/帮手/` under the session's directory, which in cx's computer is `/tenant`. The person is the one the session names in `CX_PERSON_FACTS`, else the one directory under `board/`; a board with none, or with more than one and no person named, gets no card. The extension imports nothing from `cx-board` and calls nothing of the board's.
   - The name is `<YYYYMMDD-HHMMSS>-subagent-<run id>.md`, the start's time in UTC.
-  - The front matter is `kind: finding`, a `title` and an `at`. The title is the task's first line, at most 200 characters. `at` is the start.
-  - The words are the task as given. They are cut where the whole file would pass the 32 KiB the board reads.
-- **At the end** the same file in `todo/` is rewritten, its name, title and `at` kept. The words become:
-  - a single run's own output;
-  - each run's output under its agent's name, for several;
-  - at the deadline, 超时, then what the run had written. pi-subagents' own note on the stop, its "Recovery summary", is left out.
+  - The front matter holds one JSON value a line: `kind: "helper"`, `title`, `face`, `state`, `at`, then `ended`, `took`, `ran`, `since`, `run` and `dir` where they are known. `ran` is the seconds the helper worked before its present stretch at work and `since` when that stretch began, so the time a card shows runs only at work and stands while the helper waits or is paused. The title is the task's first line, at most 200 characters; `face` is one more than the highest in the tab. The words are the task as given, cut where the whole file would pass the 32 KiB the board reads.
+  - Each write puts the whole file beside its name and renames it over the name.
+- **The states.** A card starts `working`. While the run waits on a blocking supervisor call (`contact_supervisor` asking for a decision or an interview, or `intercom` asking), read from the run's `events.jsonl` as pi-subagents appends it, the card is `waiting`, and `working` again at that call's end. A pause counts as a wait does: the present stretch is added to `ran` and `since` goes. At the end it becomes `done`, `failed`, `timeout`, `stopped` or `paused`, with `ended`, `took` as the run reports its duration, the wall's, and `ran` counted the same way; the page shows `ran` only for a card at work, a paused one among them, and `took` in a done card's line; the name and face the file holds are kept, so a rename stands.
+- **At each session's start** the extension moves its own earlier cards into `帮手/`, from every place one can lie: the person's `todo/` and `done/`, where 0.3.5 and the versions before it wrote them, and the `todo/` and `done/` of each tab of the board, where the board's own move of those two places into its module's tab took them, whichever of the two moves ran first. A card is the package's when its name is a start's time, `-subagent-` and the run, and its head is what those versions wrote: `kind: finding`, the title as one JSON string and the start in ISO 8601 UTC, with no other line but the `done`, `doneAt` and `answer` the module adds to one the seller handled; any other file stays where it is, untouched. Handled cards move too, as finished: each comes as `done` (`timeout` where its words start 超时), ended at its file's last write. Where `帮手/` already holds a file of that name, whatever it holds, nothing is written and nothing removed: the earlier card stays where it is. The person's own `todo/` and `done/` are removed when that leaves them empty; a tab's places stay as the board made them. Then each card still at work whose run folder holds no `status.json` becomes `off`, and the rest are followed again.
+- **pi-subagents' config is carried by the box,** not this package. `asyncByDefault` sends a run to the background. `toolActivation: "eager"` offers the `subagent` tool from the first request. `maxActiveAsyncRunsPerSession: 2` caps the runs in one conversation at two; a third is refused, not queued, so no card is written as queued. The 30 minutes is pi-subagents' own default for a background run.
 
-  Nothing is moved. A card the seller has already marked read stays in `done/`, and the result is a card again in `todo/` under the same name. A second start of the same run id overwrites its card. A run that ends after cx's computer stopped leaves its card as it started.
-- **pi-subagents' config is carried by the box,** not this package. `asyncByDefault` sends a run to the background. `toolActivation: "eager"` offers the `subagent` tool from the first request. `maxActiveAsyncRunsPerSession: 2` caps the runs in one conversation at two. The 30 minutes is pi-subagents' own default for a background run.
+## Facts
+
+- Finished cards accumulate in `帮手/`; nothing removes them.
+- The board's icon carries no mark while a helper runs.
+- The sand ink is 2.75:1 on a light card.
+- A card lists no files and no pages: it names the helper, its state and its times.
+- Two helpers ending together each write their own file, by run id and by rename, so nothing is lost; the board shows both within one look.
+- A computer stopped under a run cuts it: at the next start the card is marked `off`. A run whose folder still holds `status.json` is followed again and keeps its state.
+- A rename and the package's own write of the same card at one moment can each win, either way: the seller's name over a newer state, or the state over the name; the next write or rename sets it right.
+- A run that ended while the package was not there to hear its end stays 正在处理 until a new start reuses the card.
+- With more than one person's board on the computer and nobody named, no card is written, and the tab says nothing more than its empty line.
+- A start cut between the write and the removal of an earlier card leaves the earlier copy in its old place beside the new card in `帮手/`, and it stays there.
+- A seller's own file in a tab's `todo/` or `done/` that carries both a card's name and the head those versions wrote would be moved to `帮手/` as finished; none is known.
+- The time is counted from when the package hears an event, so a wait heard late is counted late.
+- No state line is written to any log.
 
 ## Tests
 
-The tests run against `pi-subagents` 0.87.0 on pi 1.5.0, the versions cx's computer runs.
+The tests run against `pi-subagents` 0.89.1 on pi 1.5.2.
 
-- **`test/board.test.ts`**, on the pinned pi in RPC mode with a scripted model on loopback, as a box starts pi. Each card is read by the board's own reader, copied into `test/fixtures/board-reader.ts` with its source lines named.
-  - A `subagent` call writes a started card whose title is the task's first line. The result rewrites the same file.
-  - A run stopped at its deadline writes 超时 with what it had.
-  - Two runs write two files.
-  - The same run id started again overwrites its card.
-- **`test/board-cards.test.ts`**, the extension on a bus of its own:
-  - the name and the front matter;
-  - a card found again after a reload;
-  - nothing moved;
-  - the task of a chain or a parallel run;
-  - no card where the board is not one person's;
-  - the 32 KiB cut;
-  - the end's words.
+- **`test/board.test.ts`**, on the pinned pi in RPC mode with a scripted model on loopback, as a box starts pi:
+  - a `subagent` call writes a working card in `帮手/` whose title is the task's first line, and its end makes the same file `done`;
+  - a run stopped at its deadline ends `timeout`;
+  - two runs write two files with faces 0 and 1;
+  - the same run id started again overwrites its card;
+  - a helper's `contact_supervisor` question makes its card `waiting`, and cx's reply makes it `working`, then `done`;
+  - an earlier card in `todo/` is moved at pi's start.
+- **`test/board-cards.test.ts`**, the extension on a bus of its own: the start card; the faces; the end states; a rename kept through the end; waiting read from `events.jsonl`, a half-written line included; following again after a new session; the time worked kept while waiting, and kept at a paused end after a wait; the move, from the person's places and from a tab's in either order, a seller's file named like a card left alone and a taken place in the tab, a seller's finding with a card's head in its words among them, leaving both files byte for byte, a cut start too; `off`; `CX_PERSON_FACTS`; the 32 KiB cut.
+- **`test/page.dom.test.ts`**, the page in happy-dom with a stand-in `cxBoard`: the groups and their lines; one group or none; the faces; a rename by keys, written as typed, `$&` and its kin included; the time at work running and the time waiting or paused standing; a changed file read again with an open name field kept; files that are not helper cards left out; a change of language; the figure drawn in each face where the board hands it, and the face's place left empty where it does not.
+- **`test/page.chrome.test.ts`**, the page in a headless Chrome driven by real keys and a real pointer over its DevTools pipe (`test/chrome.ts`; `CHROME_PATH`, else where macOS and Linux put Chrome, and skipped where there is none): a name being typed stands through another card's file notice, Escape cancels it, Tab keeps it and goes on to the next name, and a press on another name keeps it and opens that one.
 - **`test/package.test.ts`:**
   - pi lists no skill from the package and loads its two extensions;
-  - the package ships its two extensions and `agents/helper.md`;
+  - the package ships its two extensions, `agents/helper.md` and `page/helpers.html`, and declares the tab;
   - the package names `pi-subagents` and `@comchatx/cx-board` in `comchatx.builds`.
 - **`test/background.test.ts`:**
   - a run goes to the background and its result comes back into the conversation;
