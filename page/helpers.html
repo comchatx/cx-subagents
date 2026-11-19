@@ -84,9 +84,11 @@
   .hc-page > .icon { flex: none; width: var(--size-small); height: var(--size-small); }
   .hc-page > span[dir] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* A quiet press: its words, how many it holds, and at its end a mark that leads on. */
-  .hc-quiet { display: inline-flex; align-items: center; gap: var(--space-3); width: fit-content; min-height: var(--space-7); margin-inline-start: calc(var(--space-2) * -1); padding: 0 var(--space-2); border: none; border-radius: var(--radius-small); background: none; color: var(--quiet); font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-quiet { display: flex; align-items: center; gap: var(--space-3); width: fit-content; min-height: var(--space-7); margin-inline-start: calc(var(--space-2) * -1); padding: 0 var(--space-2); border: none; border-radius: var(--radius-small); background: none; color: var(--quiet); font-size: var(--size-small); line-height: var(--leading-small); }
   .hc-quiet:hover:not(:disabled) { color: var(--ink); }
   .hc-quiet > .icon { flex: none; width: var(--size-small); height: var(--size-small); }
+  /* A press sits close under the list it leads on from, one to a row. */
+  .entry.hc-card > .hc-quiet { margin-top: 0; }
   .hc-card :is(button, a):focus-visible, .hc-all :is(button, a):focus-visible { outline: 2px solid var(--act); outline-offset: 2px; }
 
   /* One helper's whole list, in the cards' place: the way back, the helper, then what it wrote and what it read. The way back stays at the
