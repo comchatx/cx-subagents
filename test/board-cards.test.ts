@@ -219,10 +219,23 @@ it("leaves an earlier card where it is when its place in the tab is taken by ano
   writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "the seller's own file\n");
   s.start();
   expect([readFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "utf8"), existsSync(source)]).toEqual(["the seller's own file\n", true]);
-  // The same run's card already in the tab, from a start cut between the write and the removal, is that card: the earlier copy goes.
-  writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), cardText({ file: "20261101-080000-subagent-r1.md", name: "Renamed", face: 3, state: "done", at: Date.UTC(2026, 10, 1, 8), run: "r1", task: "Thin titles." }));
+  // A start cut between the write and the removal leaves the card in the tab and the earlier copy in its old place: both stand.
+  const written = cardText({ file: "20261101-080000-subagent-r1.md", name: "Renamed", face: 3, state: "done", at: Date.UTC(2026, 10, 1, 8), run: "r1", task: "Thin titles." });
+  writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), written);
+  const earlier = readFileSync(source, "utf8");
   s.start();
-  expect([s.card("20261101-080000-subagent-r1.md")?.name, existsSync(source)]).toEqual(["Renamed", false]);
+  expect([readFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "utf8"), existsSync(source) && readFileSync(source, "utf8")]).toEqual([written, earlier]);
+});
+
+it("leaves both files as they were when the tab's place holds a seller's finding whose words show a helper card's head", () => {
+  const s = session();
+  const source = earlierCard(join(s.person, "todo"), "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
+  mkdirSync(s.tab);
+  const finding = "---\nkind: finding\ntitle: \"How a helper card looks\"\nat: 2026-11-18T10:00:00.000Z\n---\n\nAn example:\n\n```\n---\nkind: \"helper\"\ntitle: \"x\"\n---\n```\n";
+  writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), finding);
+  const earlier = readFileSync(source, "utf8");
+  s.start();
+  expect([readFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "utf8"), existsSync(source) && readFileSync(source, "utf8")]).toEqual([finding, earlier]);
 });
 
 it("moves the package's cards from the board's own move of the old places into a tab, handled ones as finished, in either order of the two moves", () => {
@@ -265,6 +278,26 @@ it("counts a helper's time only at work: the seconds it worked are kept while it
   run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "contact_supervisor" });
   await eventually(card, (text) => /^state: "working"$/m.test(text));
   expect([/^ran: 90$/m.test(card()), new RegExp(`^since: "${new Date(T0 + 600_000).toISOString()}"$`, "m").test(card())]).toEqual([true, true]);
+});
+
+it("counts a pause as a wait: the stretch at work added, nothing taken from the run's reported duration", async () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  const file = "20261105-093000-subagent-run-1.md";
+  const worked = (at: number) => { const card = s.card(file)!; return (card.ran ?? 0) + (card.since === undefined ? 0 : Math.round((at - card.since) / 1000)); };
+  s.clock.at = T0 + 90_000;
+  run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "contact_supervisor", args: { reason: "need_decision" } });
+  await eventually(() => s.card(file)?.state, (state) => state === "waiting");
+  s.clock.at = T0 + 600_000;
+  run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "contact_supervisor" });
+  await eventually(() => s.card(file)?.state, (state) => state === "working");
+  s.clock.at = T0 + 630_000;
+  const before = worked(T0 + 630_000);
+  s.complete({ id: "run-1", state: "paused", durationMs: 630_000 });
+  const after = s.card(file)!;
+  expect([before, after.state, after.ran, after.since, after.took, worked(T0 + 700_000)]).toEqual([120, "paused", 120, undefined, 630, 120]);
 });
 
 it("marks off, when a session starts, a card at work whose run's folder went with cx's computer, and only that one", () => {
