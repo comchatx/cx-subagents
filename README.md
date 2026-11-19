@@ -1,5 +1,7 @@
 cx can hand work that takes time to a helper in the background, while you and cx keep talking. Each job gets a card on the board that shows what cx asked for, then the result, or after 30 minutes 超时 and what was done. Useful for checking many products at once or running a large comparison.
 
+A card does not list files a helper writes with a command, pages a command fetches, or data bought with cx get; what the data cost is listed in Settings › Usage.
+
 Some things you can ask:
 
 - Hand the rival comparison for these 20 ASINs to a helper, and let's talk about something else.
