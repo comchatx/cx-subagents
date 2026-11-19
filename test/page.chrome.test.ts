@@ -24,7 +24,7 @@ const bridge = (cards: readonly Card[]): string => `<script>
   window.writes = [];
   window.opened = [];
   addEventListener("click", (event) => { const box = event.target instanceof Element ? event.target.closest("[data-cx-file]") : null; if (box !== null) window.cxBoard.open(box.getAttribute("data-cx-file")); });
-  window.notice = (file, text) => { files.set(file, { text, modified: files.get(file).modified + 1 }); for (const one of heard.get("files") ?? []) one(); };
+  window.notice = (file, text) => { files.set(file, { text, modified: (files.get(file)?.modified ?? 0) + 1 }); for (const one of heard.get("files") ?? []) one(); };
   window.cxBoard = {
     context: { locale: "en" },
     on: (name, listener) => heard.set(name, [...(heard.get(name) ?? []), listener]),
@@ -37,15 +37,15 @@ const bridge = (cards: readonly Card[]): string => `<script>
 </script>`;
 
 /**
- * The board as it holds a page: a frame as wide as the window and as tall as its page, grown after each draw, and the board's own scroll
- * outside it.
+ * The board as it holds a page: a frame as wide as the window and as tall as its page, the page's root as the board measures it, grown
+ * after each draw, and the board's own scroll outside it.
  */
-const HOST = `<!doctype html><body style="margin:0"><iframe id="frame" src="/many" style="display:block;width:100%;height:0;border:0"></iframe><script>
+const host = (src: string): string => `<!doctype html><body style="margin:0"><iframe id="frame" src="${src}" style="display:block;width:100%;height:0;border:0"></iframe><script>
 const frame = document.getElementById("frame");
 frame.onload = () => {
-  const page = frame.contentDocument.getElementById("page");
-  const fit = () => { frame.style.height = Math.ceil(page.getBoundingClientRect().bottom + 16) + "px"; };
-  new ResizeObserver(fit).observe(page);
+  const root = frame.contentDocument.documentElement;
+  const fit = () => { frame.style.height = Math.ceil(root.getBoundingClientRect().height) + "px"; };
+  new ResizeObserver(fit).observe(root);
   fit();
 };
 </script></body>`;
@@ -58,7 +58,10 @@ let address = "";
 beforeAll(async () => {
   const html = readFileSync(join(ROOT, "page", "helpers.html"), "utf8");
   const page = (cards: readonly Card[]) => html.replace('<body class="kit">', `<body class="kit">${bridge(cards)}`);
-  server = createServer((request, response) => { response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(request.url === "/host" ? HOST : request.url === "/many" ? page(MANY) : page(CARDS)); });
+  // `/same`: the page holds a height the cards and a helper's list both stand within, so the way back changes no height.
+  const SAME = '<style>html { min-height: 6000px; }</style>';
+  const pages: Record<string, string> = { "/host": host("/many"), "/host-same": host("/same"), "/many": page(MANY), "/same": page(MANY).replace("</head>", `${SAME}</head>`) };
+  server = createServer((request, response) => { response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(pages[request.url ?? ""] ?? page(CARDS)); });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   address = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
 });
@@ -178,6 +181,37 @@ it.skipIf(at === undefined)("brings the press the seller came by back into the b
     const back = (await browser.evaluate<{ top: number; bottom: number; view: number; focus: string }>(opener))!;
     // In view within a pixel: the browser places it at the window's edge to a fraction of one.
     expect([back.focus, back.top >= -1 && back.bottom <= back.view + 1]).toEqual(["Show all 4 files", true]);
+  } finally {
+    await browser.close();
+  }
+}, 60_000);
+
+it.skipIf(at === undefined)("leaves the seller's place alone after the way back changed no height, when the page grows later", async () => {
+  const browser = await chrome(at!, 800, 400);
+  try {
+    const settle = () => new Promise((done) => setTimeout(done, 300));
+    const inFrame = (expression: string) => `(() => { const document = window.frames[0].document; return ${expression}; })()`;
+    const point = (act: string) => inFrame(`(() => { const frame = window.document.getElementById("frame").getBoundingClientRect(), r = document.getElementById("h-subagent-8.md").querySelector('[data-act="${act}"]').getBoundingClientRect(); return { x: frame.left + r.left + 10, y: frame.top + r.top + r.height / 2 }; })()`);
+    const press = async (act: string) => { const at = await browser.evaluate<{ x: number; y: number }>(point(act)); await browser.press(at.x, at.y); await settle(); };
+    await browser.open(`${address}host-same`);
+    await settle();
+    const tall = await browser.evaluate<string>('document.getElementById("frame").style.height');
+    await browser.evaluate(`window.scrollTo(0, ${String(await browser.evaluate<number>(inFrame('window.document.getElementById("frame").getBoundingClientRect().top + window.scrollY + document.getElementById("h-subagent-8.md").getBoundingClientRect().top - 100')))})`);
+    await settle();
+    await press("all");
+    expect(await browser.evaluate<boolean>(inFrame('document.querySelector(".hc-all") !== null'))).toBe(true);
+    await browser.key("Escape");
+    await settle();
+    // The way back changed no height: the frame is as it was.
+    expect(await browser.evaluate<string>('document.getElementById("frame").style.height')).toBe(tall);
+    // A name being typed low on the board; the seller scrolls back to the top; then the page grows by twenty more helpers.
+    await press("name");
+    for (const key of "Zz") await browser.key(key);
+    await browser.evaluate("window.scrollTo(0, 0)");
+    await settle();
+    for (let n = 0; n < 20; n++) await browser.evaluate(inFrame(`window.frames[0].notice("z${String(n).padStart(2, "0")}-subagent-n${String(n)}.md", ${JSON.stringify(cardText({ ...card("x", "More", n + 8), file: "x", files: FILES }))})`));
+    await settle();
+    expect([await browser.evaluate<number>("window.scrollY"), await browser.evaluate<string>(inFrame("document.activeElement.value")), await browser.evaluate<string>('document.getElementById("frame").style.height') !== tall]).toEqual([0, "Zz", true]);
   } finally {
     await browser.close();
   }
