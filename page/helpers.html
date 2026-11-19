@@ -70,6 +70,36 @@
   .hc-age { flex: none; color: var(--quiet); font-size: var(--size-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .hc-card[data-state="working"] .hc-line { color: var(--ink); }
   .hc-card[data-state="failed"] .hc-line, .hc-card[data-state="timeout"] .hc-line, .hc-card[data-state="off"] .hc-line { color: var(--bad); }
+
+  /* What a helper wrote, under its head: each file the board's file box, one under another, as wide as its name. Past three the list
+     stops at two and one press under it leads to the whole list, so a card never holds more than three rows of files. */
+  .hc-files { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+  .hc-files > li { display: flex; max-width: 100%; min-width: 0; }
+  .hc-files .file-ref { text-align: start; cursor: pointer; }
+  /* A page it read, by its address: the colour of a press, one line, cut at its end; under a pointer the board's shade for a button. It
+     opens where a link in the chat opens, in a new tab of the browser. */
+  .hc-page { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; max-width: calc(100% + var(--space-2) * 2); min-height: var(--space-7); margin-inline: calc(var(--space-2) * -1); padding: 0 var(--space-2); border-radius: var(--radius-small); color: var(--act); font-size: var(--size-small); line-height: var(--leading-small); text-decoration: none; }
+  .hc-page:hover { background: var(--hover); color: var(--act-hover); text-decoration: none; }
+  :where([data-theme="dark"]) .hc-page:hover { background: var(--float-hover); }
+  .hc-page > .icon { flex: none; width: var(--size-small); height: var(--size-small); }
+  .hc-page > span[dir] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A quiet press: its words, how many it holds, and at its end a mark that leads on. */
+  .hc-quiet { display: inline-flex; align-items: center; gap: var(--space-3); width: fit-content; min-height: var(--space-7); margin-inline-start: calc(var(--space-2) * -1); padding: 0 var(--space-2); border: none; border-radius: var(--radius-small); background: none; color: var(--quiet); font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-quiet:hover:not(:disabled) { color: var(--ink); }
+  .hc-quiet > .icon { flex: none; width: var(--size-small); height: var(--size-small); }
+  .hc-card :is(button, a):focus-visible, .hc-all :is(button, a):focus-visible { outline: 2px solid var(--act); outline-offset: 2px; }
+
+  /* One helper's whole list, in the cards' place: the way back, the helper, then what it wrote and what it read. The way back stays at the
+     page's top while a long list goes under it; a row the keyboard brings into view stops below it. */
+  .hc-all { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-5); }
+  .hc-all > .hc-head, .hc-all > section, .hc-all > .hc-back { align-self: stretch; }
+  .hc-all > .hc-back { position: sticky; top: 0; z-index: 1; margin: calc(var(--space-5) * -1) calc(var(--space-6) * -1) calc(var(--space-3) * -1); padding: var(--space-5) var(--space-6) var(--space-3); background: var(--ground); }
+  html:has(.hc-all) { scroll-padding-top: calc(var(--space-8) + var(--space-6)); }
+  .hc-all > section { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+  .hc-all h3 { margin: 0; color: var(--quiet); font-size: var(--size-small); font-weight: var(--weight-strong); line-height: var(--leading-small); }
+  .hc-all .hc-name { padding-top: 0; }
+  .hc-all :is(h2, h3):focus { outline: none; }
+  .hc-all[data-state="failed"] .hc-line, .hc-all[data-state="timeout"] .hc-line, .hc-all[data-state="off"] .hc-line { color: var(--bad); }
 </style>
 </head>
 <body class="kit">
@@ -99,6 +129,8 @@
       group: { going: "进行中", done: "已完成", cut: "未完成" },
       empty: "cx 交给帮手的事会显示在这里。",
       page: "帮手",
+      allFiles: (n) => `查看全部 ${n} 个文件`, references: (n) => `${n} 份参考资料`, createdFiles: (n) => `生成的 ${n} 个文件`,
+      back: (name) => `← ${name}`, fileOpen: (name) => `${name}，在看板中查看`, newTab: "（在新标签页打开）",
     },
     en: {
       seconds: (n) => `${n} sec`, minutes: (n) => `${n} min`, hoursMinutes: (hr, m) => `${hr} hr ${m} min`,
@@ -116,6 +148,8 @@
       group: { going: "In progress", done: "Completed", cut: "Not finished" },
       empty: "What cx hands to helpers will be here.",
       page: "Helpers",
+      allFiles: (n) => `Show all ${n} files`, references: (n) => (n === 1 ? "1 reference" : `${n} references`), createdFiles: (n) => (n === 1 ? "Created 1 file" : `Created ${n} files`),
+      back: (name) => `← ${name}`, fileOpen: (name) => `${name}, show on the board`, newTab: " (Opens in a new tab)",
     },
   };
   const w = () => (zh() ? WORDS.zh : WORDS.en);
@@ -163,7 +197,8 @@
     }
     const at = Date.parse(facts.at), ended = Date.parse(facts.ended), since = Date.parse(facts.since);
     if (facts.kind !== "helper" || !Number.isFinite(at)) return undefined;
-    return { file, raw, name: String(facts.title ?? ""), face: Number.isInteger(facts.face) ? facts.face : 0, state: String(facts.state ?? "done"), at, ended: Number.isFinite(ended) ? ended : undefined, took: typeof facts.took === "number" ? facts.took : undefined, ran: typeof facts.ran === "number" ? facts.ran : 0, since: Number.isFinite(since) ? since : undefined };
+    const list = (value) => (Array.isArray(value) ? value.filter((one) => typeof one === "string" && one !== "") : []);
+    return { file, raw, name: String(facts.title ?? ""), face: Number.isInteger(facts.face) ? facts.face : 0, state: String(facts.state ?? "done"), at, ended: Number.isFinite(ended) ? ended : undefined, took: typeof facts.took === "number" ? facts.took : undefined, ran: typeof facts.ran === "number" ? facts.ran : 0, since: Number.isFinite(since) ? since : undefined, files: list(facts.files), reads: list(facts.reads) };
   }
 
   const page = document.getElementById("page");
@@ -215,6 +250,62 @@
     } catch { /* the board's next read draws the name the file holds */ }
   }
 
+  /** A page it read is an address; anything else it read is a file, by its path in cx's folder. */
+  const isPage = (one) => /^https?:\/\//i.test(one);
+  /** A file's box, as the board draws a file a page names: a press shows the file on a tab of the board, which the board does itself. */
+  const fileBox = (path) => h("button", { type: "button", class: "file-ref", dir: "auto", "data-act": "file", "data-cx-file": path, "aria-label": w().fileOpen(path.split("/").at(-1)) },
+    icon("M7 3.5h7l4 4v13H7z", "M14 3.5v4h4"), h("span", { class: "file-ref-name" }, path.split("/").at(-1)));
+  /** A page by its address, without its scheme: it opens in a new tab of the browser, as a link in the chat does. */
+  const pageLink = (address) => h("a", { class: "hc-page", "data-act": "page", href: address, target: "_blank", rel: "noopener noreferrer", title: address.replace(/^https?:\/\//i, "") },
+    icon("M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z", "M3.5 12h17", "M12 3.5c2.7 2.3 2.7 14.7 0 17", "M12 3.5c-2.7 2.3-2.7 14.7 0 17"), h("span", { dir: "ltr" }, address.replace(/^https?:\/\//i, "")), h("span", { class: "unseen" }, w().newTab));
+  const row = (one) => h("li", {}, isPage(one) ? pageLink(one) : fileBox(one));
+  const turn = () => icon("M9.5 6l6 6-6 6");
+
+  /** One helper's whole list stands in the cards' place: which helper, which part the seller came to, and how far down the cards were. */
+  let view = null;
+  const goTo = (one, at) => () => { view = { file: one.file, at, top: window.scrollY }; draw(); land(); };
+
+  /** What a helper wrote and read so far: up to three files on the card, past three two and the press to them all; what it read, one press. */
+  function lists(one) {
+    const folds = one.files.length > 3;
+    return [
+      one.files.length > 0 && h("ul", { class: "hc-files" }, (folds ? one.files.slice(0, 2) : one.files).map(row)),
+      folds && h("button", { type: "button", class: "hc-quiet", "data-act": "all", onclick: goTo(one, "files") }, h("span", {}, w().allFiles(one.files.length)), turn()),
+      one.reads.length > 0 && h("button", { type: "button", class: "hc-quiet", "data-act": "reads", onclick: goTo(one, "reads") }, h("span", {}, w().references(one.reads.length)), turn()),
+    ];
+  }
+
+  /** Back to the cards, as far down as the seller had read them, the keyboard on the press they came by. */
+  function leave() {
+    const { file, at, top } = view;
+    view = null;
+    draw();
+    window.scrollTo(0, top);
+    const press = document.getElementById(file)?.querySelector(`[data-act="${at === "reads" ? "reads" : "all"}"]`) ?? document.getElementById(file)?.querySelector("[data-act]");
+    press?.focus({ preventScroll: true });
+    press?.scrollIntoView({ block: "nearest" });
+  }
+
+  /**
+   * One helper's whole list: the way back, the helper and how it stands, the files it wrote, then what it read, pages before files. What
+   * it read has its heading over it; the files have theirs only where both lists stand, the press having said what a list of files is.
+   */
+  function whole(one) {
+    const pages = one.reads.filter(isPage), opened = one.reads.filter((read) => !isPage(read));
+    const part = (key, words, items) => items.length > 0 && h("section", { id: `part-${key}`, "aria-labelledby": `whole-${key}` },
+      h("h3", { id: `whole-${key}`, tabindex: "-1", hidden: key === "files" && one.reads.length === 0 }, words(items.length)), h("ul", { class: "hc-files" }, items.map(row)));
+    return h("div", { class: "hc-all", id: `${one.file}-whole`, "data-state": one.state, onkeydown: (event) => { if (event.key === "Escape") { event.preventDefault(); leave(); } } },
+      h("div", { class: "hc-back" }, h("button", { type: "button", class: "hc-quiet", "data-act": "back", onclick: leave }, w().back(w().page))),
+      h("div", { class: "hc-head" }, face(one), h("div", { class: "hc-id" }, h("h2", { class: "hc-name", id: "whole-name", tabindex: "-1", dir: "auto" }, one.name), h("p", { class: "hc-now" }, h("span", { class: "hc-line" }, nowLine(one))))),
+      part("files", w().createdFiles, one.files), part("reads", w().references, [...pages, ...opened]));
+  }
+  /** The keyboard lands on the part the seller asked for, which brings it into view; the files are at the page's top. */
+  function land() {
+    window.scrollTo(0, 0);
+    const at = view?.at === "reads" ? document.getElementById("whole-reads") : null;
+    if (at && !at.hidden) { at.focus({ preventScroll: true }); at.scrollIntoView({ block: "start" }); } else document.getElementById("whole-name")?.focus({ preventScroll: true });
+  }
+
   /** The name fields open while the page draws again: each is put back as it stands, so its words, its caret and the keyboard stay. */
   let fields = new Map();
   function card(one) {
@@ -248,7 +339,7 @@
     const age = atWork(one) ? h("span", { class: "hc-age", "data-age": one.file, "aria-label": w().ran(span(ran(one))) }, span(ran(one))) : null;
     const head = h("div", { class: "hc-head" }, face(one),
       h("div", { class: "hc-id" }, h("div", { class: "hc-top" }, name), h("p", { class: "hc-now" }, h("span", { class: "hc-line" }, nowLine(one)), age)));
-    return h("li", {}, h("article", { class: "entry hc-card", id: one.file, "data-state": one.state, "aria-labelledby": naming.has(one.file) ? undefined : `${one.file}-name`, "aria-label": naming.has(one.file) ? one.name : undefined }, head));
+    return h("li", {}, h("article", { class: "entry hc-card", id: one.file, "data-state": one.state, "aria-labelledby": naming.has(one.file) ? undefined : `${one.file}-name`, "aria-label": naming.has(one.file) ? one.name : undefined }, head, lists(one)));
   }
 
   const focusOn = (one, selector) => document.getElementById(one.file)?.querySelector(selector)?.focus({ preventScroll: true });
@@ -257,7 +348,17 @@
   let drawing = false;
   function draw() {
     drawing = true;
-    const held = document.activeElement?.closest?.(".hc-card") ? { file: document.activeElement.closest(".hc-card").id, act: document.activeElement.dataset.act } : undefined;
+    const focused = document.activeElement;
+    const host = focused?.closest?.(".hc-card, .hc-all");
+    const held = host ? { file: host.classList.contains("hc-all") ? `${view?.file}-whole` : host.id, act: focused.dataset.act, key: focused.dataset.cxFile ?? focused.getAttribute("href") ?? focused.id } : undefined;
+    const listed = view && cards.get(view.file);
+    if (view && listed === undefined) view = null;
+    if (listed) {
+      page.replaceChildren(whole(listed));
+      if (held) (findHeld(held) ?? document.getElementById("whole-name"))?.focus({ preventScroll: true });
+      drawing = false;
+      return;
+    }
     fields = new Map([...page.querySelectorAll('[data-act="name-field"]')].filter((input) => naming.has(input.closest(".hc-card")?.id) && !input.dataset.settled).map((input) => [input.closest(".hc-card").id, input]));
     const caret = held?.act === "name-field" ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : undefined;
     const shown = [...cards.values()].sort((a, b) => b.at - a.at || (a.file < b.file ? 1 : -1));
@@ -266,10 +367,23 @@
       : groups.length === 1 ? h("ul", { class: "hc-list" }, groups[0].cards.map(card))
         : h("div", { class: "hc-groups", "data-n": String(groups.length) }, groups.map((group) =>
           h("section", { class: "hc-group", "data-group": group.key, "aria-labelledby": `group-${group.key}` }, h("h2", { id: `group-${group.key}` }, w().group[group.key]), h("ul", { class: "hc-list" }, group.cards.map(card))))));
-    if (held && !naming.has(held.file) && held.act !== "name-field") document.getElementById(held.file)?.querySelector(`[data-act="${held.act}"]`)?.focus({ preventScroll: true });
+    if (held && !naming.has(held.file) && held.act !== "name-field") findHeld(held)?.focus({ preventScroll: true });
     if (held?.act === "name-field" && naming.has(held.file)) { const input = document.getElementById(held.file)?.querySelector('[data-act="name-field"]'); input?.focus({ preventScroll: true }); if (caret !== undefined) input?.setSelectionRange(caret[0], caret[1]); }
     fields = new Map();
     drawing = false;
+  }
+
+  /**
+   * The control the keyboard was on, drawn again: the same file or page by what it holds, else the same press. A file box that gave its
+   * place to the press to the whole list, as a fourth file comes, hands the keyboard to that press.
+   */
+  function findHeld(held) {
+    const host = document.getElementById(held.file);
+    if (!host) return undefined;
+    const same = [...host.querySelectorAll(held.act ? `[data-act="${held.act}"]` : "[id]")].find((one) => (one.dataset.cxFile ?? one.getAttribute("href") ?? one.id) === held.key);
+    if (same) return same;
+    if (held.act === "file") return host.querySelector('[data-act="all"]') ?? undefined;
+    return held.act ? host.querySelector(`[data-act="${held.act}"]`) ?? undefined : undefined;
   }
 
   // The control on a card a pointer is pressing, until its click or a key: what a name's field hands the press on to.

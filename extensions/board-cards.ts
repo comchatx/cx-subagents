@@ -1,5 +1,5 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmdirSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** pi-subagents' events for a background run, on the session's bus (`pi-subagents` `src/shared/types.js`). */
@@ -26,6 +26,10 @@ export const CARD_MAX_BYTES = 32 * 1024;
 const NAME_MAX = 200;
 /** The `subagent` calls whose words are kept, the latest, for a start that names its call after the call's own result. */
 const ASKED_KEPT = 64;
+/** The most of a card its two lists take, so the head stays a small part of what the board reads: about three hundred long addresses. */
+export const LISTS_MAX_BYTES = 24 * 1024;
+/** pi-subagents' line in a run's `events.jsonl` after which it writes no event of the helper's (`TRUNCATED_EVENT_TYPE`, at 50 MiB). */
+const TRUNCATED = "subagent.events.truncated";
 
 /** How a helper stands, as its card says it. `off`: it was at work when cx's computer stopped, and its run was lost with it. */
 export type State = "working" | "waiting" | "paused" | "done" | "failed" | "timeout" | "stopped" | "off";
@@ -48,6 +52,9 @@ export type Card = {
   readonly run: string;
   /** pi-subagents' folder for the run, which holds its `status.json` and `events.jsonl`. */
   readonly dir?: string;
+  /** The files it wrote, by their path in cx's folder; and what it read, a page by its address and a file by its path; first first. */
+  readonly files?: readonly string[];
+  readonly reads?: readonly string[];
   readonly task: string;
 };
 /** A card as read back: one of the package's earlier versions (`kind: finding`) has no state and no face. */
@@ -86,6 +93,8 @@ export function cardText(card: Card): string {
   if (card.since !== undefined) facts.push(["since", iso(card.since)]);
   facts.push(["run", card.run]);
   if (card.dir !== undefined) facts.push(["dir", card.dir]);
+  if (card.files !== undefined && card.files.length > 0) facts.push(["files", card.files]);
+  if (card.reads !== undefined && card.reads.length > 0) facts.push(["reads", card.reads]);
   const head = `---\n${facts.map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join("\n")}\n---\n\n`;
   const room = CARD_MAX_BYTES - Buffer.byteLength(head) - 1;
   const body = Buffer.byteLength(card.task) <= room ? card.task : `${Buffer.from(card.task).subarray(0, room - 3).toString().replace(/�+$/, "")}…`;
@@ -113,12 +122,16 @@ export function readCard(file: string, raw: string): ReadCard | undefined {
   const since = time("since");
   const ran = facts.get("ran");
   const dir = text(facts.get("dir"));
+  const list = (key: string): readonly string[] | undefined => { const value = facts.get(key); return Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : undefined; };
+  const files = list("files");
+  const reads = list("reads");
   const run = text(facts.get("run")) ?? (/-subagent-([A-Za-z0-9_-]+)\.md$/.exec(file)?.[1] ?? "");
   return {
     file, name: text(facts.get("title")) ?? "", at, run, task: match[2]!.replace(/\n$/, ""),
     ...(state === undefined ? {} : { state }), ...(typeof face === "number" && Number.isInteger(face) ? { face } : {}),
     ...(ended === undefined ? {} : { ended }), ...(typeof took === "number" ? { took } : {}), ...(dir === undefined ? {} : { dir }),
     ...(typeof ran === "number" ? { ran } : {}), ...(since === undefined ? {} : { since }),
+    ...(files === undefined ? {} : { files }), ...(reads === undefined ? {} : { reads }),
   };
 }
 
@@ -249,6 +262,73 @@ const asksCx = (name: unknown, args: unknown): boolean => {
 };
 
 /**
+ * What one of the four tools a card lists hands it when the call ends well: `write` and `edit` a file it wrote, `read` a file it read,
+ * `fetch_content` the pages it read (`url`, or each of `urls`). A file is named by its path in cx's folder (`tree`), the folder the board
+ * opens files from, a relative path read against it; a file outside it is no file the board can show and is not listed.
+ */
+export function arrival(tool: unknown, args: unknown, tree: string): { readonly files: readonly string[]; readonly reads: readonly string[] } {
+  const call = record(args);
+  const inTree = (path: unknown): string[] => {
+    if (typeof path !== "string" || path.trim() === "") return [];
+    const at = relative(tree, resolve(tree, path.replace(/^@/, "")));
+    return at === "" || at.startsWith("..") || isAbsolute(at) ? [] : [at];
+  };
+  if (tool === "write" || tool === "edit") return { files: inTree(call["path"]), reads: [] };
+  if (tool === "read") return { files: [], reads: inTree(call["path"]) };
+  if (tool === "fetch_content") {
+    const pages = [call["url"], ...(Array.isArray(call["urls"]) ? call["urls"] : [])].filter((one): one is string => typeof one === "string" && /^https?:\/\/\S+$/i.test(one.trim())).map((one) => one.trim());
+    return { files: [], reads: pages };
+  }
+  return { files: [], reads: [] };
+}
+
+/** A card with what arrived added at the ends of its lists, each once, while both lists stay within `LISTS_MAX_BYTES`. */
+export function withArrival(card: Card, came: { readonly files: readonly string[]; readonly reads: readonly string[] }): Card {
+  const files = [...(card.files ?? [])];
+  const reads = [...(card.reads ?? [])];
+  let size = Buffer.byteLength(JSON.stringify(files)) + Buffer.byteLength(JSON.stringify(reads));
+  const add = (list: string[], one: string): void => {
+    if (list.includes(one)) return;
+    const more = Buffer.byteLength(JSON.stringify(one)) + 1;
+    if (size + more > LISTS_MAX_BYTES) return;
+    list.push(one);
+    size += more;
+  };
+  for (const one of came.files) add(files, one);
+  for (const one of came.reads) add(reads, one);
+  return { ...card, files, reads };
+}
+
+/**
+ * The four tools' calls that ended well in a helper's own session file, in order, for a run whose `events.jsonl` stopped at its bound:
+ * each call as the helper's message holds it, joined to its result by the call's id.
+ */
+export function sessionArrivals(path: string, tree: string): { readonly files: readonly string[]; readonly reads: readonly string[] } {
+  let raw: string;
+  try { raw = readFileSync(path, "utf8"); } catch { return { files: [], reads: [] }; }
+  const calls = new Map<string, { name: unknown; args: unknown }>();
+  const files: string[] = [];
+  const reads: string[] = [];
+  for (const line of raw.split("\n")) {
+    if (line.trim() === "") continue;
+    let entry: Record<string, unknown>;
+    try { entry = record(JSON.parse(line)); } catch { continue; }
+    const message = record(entry["message"]);
+    if (message["role"] === "assistant" && Array.isArray(message["content"])) {
+      for (const part of message["content"].map(record)) if (part["type"] === "toolCall" && typeof part["id"] === "string") calls.set(part["id"], { name: part["name"], args: part["arguments"] });
+    }
+    if (message["role"] === "toolResult" && message["isError"] !== true && typeof message["toolCallId"] === "string") {
+      const call = calls.get(message["toolCallId"]);
+      if (call === undefined) continue;
+      const came = arrival(call.name, call.args, tree);
+      files.push(...came.files);
+      reads.push(...came.reads);
+    }
+  }
+  return { files, reads };
+}
+
+/**
  * One run's `events.jsonl`, read as pi-subagents appends it, each new whole line handed on once; a line cut at the file's end waits for
  * its rest. Its folder is watched, so a line is read when it is written.
  */
@@ -302,6 +382,8 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
   const asked = new Map<string, string>();
   const running = new Set<string>();
   const followers = new Map<string, Follower>();
+  /** The runs whose `events.jsonl` reached its bound: their lists are filled from the helper's session file at the end. */
+  const cut = new Set<string>();
   let cwd = process.cwd();
 
   /** The seconds a card at work has worked so far: before its present stretch, and in it. */
@@ -311,15 +393,23 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const card = found(person, run);
     if (card?.state === undefined) return;
     const next = change({ ...card, face: card.face ?? 0, state: card.state });
-    if (next.state !== card.state) write(person, next);
+    if (next.state !== card.state || next.files?.length !== card.files?.length || next.reads?.length !== card.reads?.length) write(person, next);
   };
 
   const follow = (person: string, run: string, dir: string): void => {
     if (followers.has(run)) return;
     const waits = new Set<string>();
+    const calls = new Map<string, { name: unknown; args: unknown }>();
     const follower = new Follower(join(dir, "events.jsonl"), (event) => {
+      if (event["type"] === TRUNCATED) cut.add(run);
       const id = text(event["toolCallId"]);
       if (id === undefined) return;
+      if (event["type"] === "tool_execution_start" && ["write", "edit", "read", "fetch_content"].includes(String(event["toolName"]))) calls.set(id, { name: event["toolName"], args: event["args"] });
+      if (event["type"] === "tool_execution_end" && calls.has(id)) {
+        const call = calls.get(id)!;
+        calls.delete(id);
+        if (event["isError"] !== true) update(person, run, (card) => withArrival(card, arrival(call.name, call.args, cwd)));
+      }
       if (event["type"] === "tool_execution_start" && asksCx(event["toolName"], event["args"])) {
         waits.add(id);
         update(person, run, (card) => (card.state === "working" ? (({ since: _since, ...rest }) => ({ ...rest, state: "waiting" as const, ran: worked(card) }))(card) : card));
@@ -331,7 +421,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     followers.set(run, follower);
     follower.start(dir);
   };
-  const unfollow = (run: string): void => { followers.get(run)?.stop(); followers.delete(run); };
+  const unfollow = (run: string): void => { followers.get(run)?.stop(); followers.delete(run); cut.delete(run); };
 
   pi.on("session_start", (_event, ctx) => {
     cwd = ctx.cwd;
@@ -375,14 +465,21 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const run = text(event["id"]) ?? text(event["runId"]);
     const person = personDir(cwd);
     if (run === undefined || person === undefined) return;
+    // The run's end reads its log once more, for the lines written since the last look; where the log stopped at its bound, what the
+    // helper wrote and read after it is taken from its session file.
+    followers.get(run)?.read();
+    const sessions = cut.has(run) ? [...(Array.isArray(event["results"]) ? event["results"].map((one) => text(record(one)["sessionFile"])) : []), text(event["sessionFile"])] : [];
     unfollow(run);
     const ended = now();
-    const card = found(person, run);
+    const before = found(person, run);
+    const card = before === undefined ? undefined : [...new Set(sessions.filter((one): one is string => one !== undefined))]
+      .reduce((one, session) => withArrival(one, sessionArrivals(session, cwd)), { ...before, face: before.face ?? 0, state: before.state ?? "working" } as Card);
     const took = typeof event["durationMs"] === "number" ? Math.round(event["durationMs"] / 1000) : card === undefined ? 0 : Math.max(0, Math.round((ended - card.at) / 1000));
     const dir = card?.dir ?? text(event["asyncDir"]);
     write(person, {
       file: card?.file ?? `${stamp(ended)}${suffix(run)}`, name: card?.name || (text(event["agent"]) ?? "subagent"), face: card?.face ?? nextFace(person),
       state: endState(event), at: card?.at ?? ended, ended, took, ran: took, run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
+      ...(card?.files === undefined ? {} : { files: card.files }), ...(card?.reads === undefined ? {} : { reads: card.reads }),
     });
   });
 }

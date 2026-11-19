@@ -212,3 +212,80 @@ it("runs a helper's time only at work: after a minute the one at work is a minut
     now.mockRestore();
   }
 });
+
+const lists = (document: Window["document"]) => [...document.querySelectorAll(".hc-card")].map((one) => [
+  [...one.querySelectorAll('[data-act="file"]')].map((box) => [box.getAttribute("data-cx-file"), box.textContent]),
+  one.querySelector('[data-act="all"]')?.textContent ?? null, one.querySelector('[data-act="reads"]')?.textContent ?? null,
+]);
+const FOUR = ["reports/rivals.md", "reports/prices.csv", "data/stock.csv", "reports/summary.md"];
+const READS = ["data/orders.csv", "https://www.amazon.com/dp/B0EXAMPLE1"];
+
+it("carries on a card what its helper wrote and read so far: up to three files, past three two and the press to all, what it read one press", async () => {
+  const p = page([
+    card("a-subagent-1.md", { at: T0 + 4, files: FOUR, reads: READS }),
+    card("b-subagent-2.md", { at: T0 + 3, files: FOUR.slice(0, 3) }),
+    card("c-subagent-3.md", { at: T0 + 2, reads: READS.slice(1) }),
+    card("d-subagent-4.md", { at: T0 + 1 }),
+  ]);
+  await settle();
+  expect(lists(p.document)).toEqual([
+    [[["reports/rivals.md", "rivals.md"], ["reports/prices.csv", "prices.csv"]], "查看全部 4 个文件", "2 份参考资料"],
+    [[["reports/rivals.md", "rivals.md"], ["reports/prices.csv", "prices.csv"], ["data/stock.csv", "stock.csv"]], null, null],
+    [[], null, "1 份参考资料"],
+    [[], null, null],
+  ]);
+  expect(p.document.querySelector('[data-act="file"]')?.getAttribute("aria-label")).toBe("rivals.md，在看板中查看");
+  await p.window.happyDOM.close();
+  const en = page([card("a-subagent-1.md", { files: FOUR, reads: READS.slice(1) }), card("b-subagent-2.md", { at: T0 - 1, reads: READS })], "en");
+  await settle();
+  expect(lists(en.document).map((one) => one.slice(1))).toEqual([["Show all 4 files", "1 reference"], [null, "2 references"]]);
+});
+
+it("opens one helper's whole list in the cards' place, and Escape or the way back returns to the press it came by", async () => {
+  const p = page([card("a-subagent-1.md", { name: "竞品对比", files: FOUR, reads: READS }), card("b-subagent-2.md", { at: T0 - 1, files: FOUR })]);
+  await settle();
+  const at = (selector: string) => p.document.querySelector(selector) as unknown as Press & { focus(): void };
+  at('#a-subagent-1\\.md [data-act="all"]').click();
+  await settle();
+  const listPage = () => ({
+    back: p.document.querySelector('.hc-all [data-act="back"]')?.textContent, name: p.document.querySelector(".hc-all h2")?.textContent,
+    parts: [...p.document.querySelectorAll(".hc-all section")].map((part) => [part.querySelector("h3")?.hasAttribute("hidden") ? null : part.querySelector("h3")?.textContent, [...part.querySelectorAll("li > *")].map((one) => one.getAttribute("data-cx-file") ?? one.getAttribute("href"))]),
+    focus: (p.document.activeElement as unknown as { id: string }).id,
+  });
+  expect(listPage()).toEqual({ back: "← 帮手", name: "竞品对比", parts: [["生成的 4 个文件", FOUR], ["2 份参考资料", ["https://www.amazon.com/dp/B0EXAMPLE1", "data/orders.csv"]]], focus: "whole-name" });
+  expect(p.document.querySelector(".hc-card")).toBeNull();
+  p.document.querySelector(".hc-all")!.dispatchEvent(new p.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await settle();
+  expect([p.document.querySelector(".hc-all"), (p.document.activeElement as unknown as { textContent: string }).textContent]).toEqual([null, "查看全部 4 个文件"]);
+  at('#a-subagent-1\\.md [data-act="reads"]').click();
+  await settle();
+  expect(listPage().focus).toBe("whole-reads");
+  at('.hc-all [data-act="back"]').click();
+  await settle();
+  expect((p.document.activeElement as unknown as { textContent: string }).textContent).toBe("2 份参考资料");
+  // A list of files alone needs no heading: the press said what it is.
+  at('#b-subagent-2\\.md [data-act="all"]').click();
+  await settle();
+  expect(listPage().parts).toEqual([[null, FOUR]]);
+});
+
+it("takes what arrives while the page is open: the new file in its place, the keyboard where it was, and the press to all where a fourth file folds the list", async () => {
+  const one = card("a-subagent-1.md", { files: FOUR.slice(0, 2) });
+  const p = page([one]);
+  await settle();
+  const focusFile = (path: string) => (p.document.querySelector(`[data-cx-file="${path}"]`) as unknown as { focus(): void }).focus();
+  const focused = () => { const on = p.document.activeElement as unknown as { getAttribute(name: string): string | null; textContent: string }; return on.getAttribute("data-cx-file") ?? on.textContent; };
+  focusFile("reports/prices.csv");
+  await p.change({ ...one, files: FOUR.slice(0, 3) });
+  expect([lists(p.document)[0]![0]!.length, focused()]).toEqual([3, "reports/prices.csv"]);
+  focusFile("data/stock.csv");
+  await p.change({ ...one, files: FOUR, reads: READS.slice(0, 1) });
+  expect([lists(p.document)[0], focused()]).toEqual([[[["reports/rivals.md", "rivals.md"], ["reports/prices.csv", "prices.csv"]], "查看全部 4 个文件", "1 份参考资料"], "查看全部 4 个文件"]);
+  // On the list page a new file goes last, and the keyboard stays on the row it was on.
+  (p.document.querySelector('[data-act="all"]') as unknown as Press).click();
+  await settle();
+  focusFile("reports/prices.csv");
+  await p.change({ ...one, files: [...FOUR, "reports/fifth.md"], reads: READS.slice(0, 1) });
+  expect([[...p.document.querySelectorAll('.hc-all [data-act="file"]')].map((box) => box.getAttribute("data-cx-file")), p.document.querySelector("#whole-files")?.textContent, focused()])
+    .toEqual([[...FOUR, "reports/fifth.md", "data/orders.csv"], "生成的 5 个文件", "reports/prices.csv"]);
+});
