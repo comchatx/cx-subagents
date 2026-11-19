@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
@@ -76,7 +76,7 @@ it("puts a helper in its own tab at its start: at work, the task's first line it
   s.started({ id: "run-1", toolCallId: "c1", agent: "helper", asyncDir: "/nowhere/run-1" });
   expect(s.files()).toEqual(["20261105-093000-subagent-run-1.md"]);
   expect(s.card("20261105-093000-subagent-run-1.md")).toEqual({
-    file: "20261105-093000-subagent-run-1.md", name: "Check the US titles", face: 0, state: "working", at: T0, run: "run-1", dir: "/nowhere/run-1", task: "\n  Check   the US titles  \nthen the UK.",
+    file: "20261105-093000-subagent-run-1.md", name: "Check the US titles", face: 0, state: "working", at: T0, ran: 0, since: T0, run: "run-1", dir: "/nowhere/run-1", task: "\n  Check   the US titles  \nthen the UK.",
   });
   // Nothing goes to the person's to-do places any more.
   expect(readdirSync(s.person)).toEqual([TAB]);
@@ -187,6 +187,84 @@ it("moves the package's earlier cards into the tab once, ended at their file's l
   // A second start finds nothing to move.
   s.start();
   expect(s.files()).toHaveLength(2);
+});
+
+/** A card as 0.3.5 and the versions before it wrote it, or as the board's module left it once the seller handled it. */
+function earlierCard(place: string, name: string, words: string, at: number, modified: number, handled = false): string {
+  mkdirSync(place, { recursive: true });
+  const marks = handled ? `\ndone: read\ndoneAt: ${new Date(modified).toISOString()}` : "";
+  writeFileSync(join(place, name), `---\nkind: finding\ntitle: ${JSON.stringify(words.split("\n")[0])}\nat: ${new Date(at).toISOString()}${marks}\n---\n\n${words}\n`);
+  utimesSync(join(place, name), modified / 1000, modified / 1000);
+  return join(place, name);
+}
+
+it("leaves a seller's own file whose name ends as a helper card's, and moves only what the package wrote", () => {
+  const s = session();
+  const todo = join(s.person, "todo");
+  mkdirSync(todo);
+  const note = "---\nkind: choice\ntitle: \"Which plan?\"\nat: 2026-11-19T08:00:00.000Z\noptions:\n  - A\n  - B\n---\n\nPick one.\n";
+  writeFileSync(join(todo, "20261119-080000-seller-subagent-plan.md"), note);
+  writeFileSync(join(todo, "20261119-090000-subagent-x.md"), "my own words, no front matter\n");
+  earlierCard(todo, "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
+  s.start();
+  expect(s.files()).toEqual(["20261101-080000-subagent-r1.md"]);
+  expect(readdirSync(todo).sort()).toEqual(["20261119-080000-seller-subagent-plan.md", "20261119-090000-subagent-x.md"]);
+  expect(readFileSync(join(todo, "20261119-080000-seller-subagent-plan.md"), "utf8")).toBe(note);
+});
+
+it("leaves an earlier card where it is when its place in the tab is taken by another file, and overwrites nothing", () => {
+  const s = session();
+  const source = earlierCard(join(s.person, "todo"), "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
+  mkdirSync(s.tab);
+  writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "the seller's own file\n");
+  s.start();
+  expect([readFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "utf8"), existsSync(source)]).toEqual(["the seller's own file\n", true]);
+  // The same run's card already in the tab, from a start cut between the write and the removal, is that card: the earlier copy goes.
+  writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), cardText({ file: "20261101-080000-subagent-r1.md", name: "Renamed", face: 3, state: "done", at: Date.UTC(2026, 10, 1, 8), run: "r1", task: "Thin titles." }));
+  s.start();
+  expect([s.card("20261101-080000-subagent-r1.md")?.name, existsSync(source)]).toEqual(["Renamed", false]);
+});
+
+it("moves the package's cards from the board's own move of the old places into a tab, handled ones as finished, in either order of the two moves", () => {
+  // The board moved the old `todo/` and `done/` into its module's tab, 待办, first: the cards are in that tab's places.
+  const first = session();
+  const module = join(first.person, "待办");
+  earlierCard(join(module, "todo"), "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
+  earlierCard(join(module, "done"), "20261102-080000-subagent-r2.md", "Read ten reviews.", Date.UTC(2026, 10, 2, 8), Date.UTC(2026, 10, 2, 9), true);
+  writeFileSync(join(module, "todo", "20261103-080000-plan.md"), "---\nkind: proposal\ntitle: \"Plan\"\nat: 2026-11-03T08:00:00.000Z\n---\n\nA plan.\n");
+  first.start();
+  expect(first.files()).toEqual(["20261101-080000-subagent-r1.md", "20261102-080000-subagent-r2.md"]);
+  expect(first.card("20261102-080000-subagent-r2.md")).toMatchObject({ name: "Read ten reviews.", state: "done", run: "r2" });
+  // The module's places stay as the board made them, with the seller's files.
+  expect([readdirSync(join(module, "todo")), readdirSync(join(module, "done"))]).toEqual([["20261103-080000-plan.md"], []]);
+  // The package moved first, and the board's move came after with the seller's file left in `todo/`: nothing of the package's is left to move.
+  const second = session();
+  const todo = join(second.person, "todo");
+  earlierCard(todo, "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
+  writeFileSync(join(todo, "mine.md"), "mine\n");
+  second.start();
+  mkdirSync(join(second.person, "待办"));
+  renameSync(todo, join(second.person, "待办", "todo"));
+  second.start();
+  expect([second.files(), readdirSync(join(second.person, "待办", "todo"))]).toEqual([["20261101-080000-subagent-r1.md"], ["mine.md"]]);
+});
+
+it("counts a helper's time only at work: the seconds it worked are kept while it waits, and its work goes on from when the answer comes", async () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  const card = () => readFileSync(join(s.tab, "20261105-093000-subagent-run-1.md"), "utf8");
+  expect(card()).toMatch(/^ran: 0$/m);
+  expect(card()).toMatch(new RegExp(`^since: "${new Date(T0).toISOString()}"$`, "m"));
+  s.clock.at = T0 + 90_000;
+  run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "contact_supervisor", args: { reason: "need_decision" } });
+  await eventually(card, (text) => /^state: "waiting"$/m.test(text));
+  expect([/^ran: 90$/m.test(card()), /^since:/m.test(card())]).toEqual([true, false]);
+  s.clock.at = T0 + 600_000;
+  run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "contact_supervisor" });
+  await eventually(card, (text) => /^state: "working"$/m.test(text));
+  expect([/^ran: 90$/m.test(card()), new RegExp(`^since: "${new Date(T0 + 600_000).toISOString()}"$`, "m").test(card())]).toEqual([true, true]);
 });
 
 it("marks off, when a session starts, a card at work whose run's folder went with cx's computer, and only that one", () => {

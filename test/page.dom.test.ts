@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Window } from "happy-dom";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { cardText, type Card } from "../extensions/board-cards.js";
 import { ROOT } from "./world.js";
 
@@ -38,10 +38,12 @@ function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
   };
   const figures: { state: string }[] = [];
   Object.assign(window, { cxBoard, ...(figure ? { CxCharacter: { mount: (fig: { append(node: unknown): void }, options: { state: string }) => { figures.push(options); fig.append(window.document.createElement("svg")); } } } : {}) });
-  new Function("window", "document", "CSS", "setInterval", "queueMicrotask", scripts[0]!)(window, window.document, window.CSS, () => 0, (run: () => void) => queueMicrotask(run));
+  const ticks: (() => void)[] = [];
+  new Function("window", "document", "CSS", "setInterval", "queueMicrotask", scripts[0]!)(window, window.document, window.CSS, (tick: () => void) => { ticks.push(tick); return 0; }, (run: () => void) => queueMicrotask(run));
   const hear = async (name: string) => { for (const one of heard.get(name) ?? []) one(); await settle(); };
   const change = async (one: Card) => { store.set(one.file, { text: cardText(one), modified: (store.get(one.file)?.modified ?? 0) + 1 }); await hear("files"); };
-  return { document: window.document, window, store, asked, figures, hear, change };
+  const tick = () => { for (const one of ticks) one(); };
+  return { document: window.document, window, store, asked, figures, hear, change, tick };
 }
 
 const groups = (document: Window["document"]) => [...document.querySelectorAll(".hc-group")].map((group) => [group.querySelector("h2")?.textContent, [...group.querySelectorAll(".hc-card")].map((one) => [one.querySelector(".hc-name")?.textContent, one.getAttribute("data-state"), one.querySelector(".hc-line")?.textContent])]);
@@ -173,4 +175,40 @@ it("draws cx's figure in each face where the board hands it, and leaves the face
   expect(none.figures).toEqual([]);
   // The page carries no figure of its own.
   expect(readFileSync(join(ROOT, "page", "helpers.html"), "utf8")).not.toMatch(/CxCharacter\s*=|function \(root, factory\)/);
+});
+
+it("writes a name as it was typed, `$&`, `$1`, `$$` and their kin as the characters they are, as one string on the title line", async () => {
+  const p = page([card("a-subagent-1.md", { name: "Rival comparison" })], "en");
+  await settle();
+  (p.document.querySelector('[data-act="name"]') as unknown as Press).click();
+  const field = p.document.querySelector('[data-act="name-field"]') as unknown as Field;
+  const typed = "A $& B $1 $$ $` $' C";
+  field.value = typed;
+  field.dispatchEvent(new p.window.KeyboardEvent("keydown", { key: "Enter" }));
+  await settle();
+  const text = p.store.get("a-subagent-1.md")!.text;
+  expect([...text.matchAll(/^title: (.*)$/gm)].map((one) => one[1])).toEqual([JSON.stringify(typed)]);
+  expect(p.document.querySelector(".hc-name")?.textContent).toBe(typed);
+});
+
+it("runs a helper's time only at work: after a minute the one at work is a minute on, the waiting and the paused one keep theirs", async () => {
+  const now = vi.spyOn(Date, "now").mockReturnValue(T0 + 10 * 60_000);
+  try {
+    const p = page([
+      card("a-subagent-1.md", { name: "at work", at: T0, ran: 60, since: T0 + 9 * 60_000 }),
+      card("b-subagent-2.md", { name: "waiting", state: "waiting", at: T0 - 1, ran: 120 }),
+      card("c-subagent-3.md", { name: "paused", state: "paused", at: T0 - 2, ran: 300 }),
+    ], "en");
+    await settle();
+    const ages = () => [...p.document.querySelectorAll(".hc-card")].map((one) => one.querySelector(".hc-age")?.textContent);
+    expect(ages()).toEqual(["2 min", "2 min", "5 min"]);
+    now.mockReturnValue(T0 + 11 * 60_000);
+    p.tick();
+    expect(ages()).toEqual(["3 min", "2 min", "5 min"]);
+    // Drawn again, as when the board says a file changed, each keeps the same time.
+    await p.hear("context");
+    expect(ages()).toEqual(["3 min", "2 min", "5 min"]);
+  } finally {
+    now.mockRestore();
+  }
 });

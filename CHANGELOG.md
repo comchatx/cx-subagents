@@ -5,7 +5,8 @@
 - The board tab 帮手 / Helpers, `page/helpers.html`, declared in `comchatx.board`: one card a helper, with its face, its name, its state line and how long it has run, in three groups, in progress, completed and not finished, newest first. The seller renames a helper by pressing its name.
 - Each face is cx's figure as the board hands every page; a board that hands none leaves the face's place empty, and the package carries no figure of its own.
 - The card moves from `todo/` to `board/<person>/帮手/`, with `kind: "helper"` and a state: working, waiting for cx's answer, done, failed, stopped at the 30-minute limit, stopped, or off when cx's computer was stopped under the run.
-- At each session's start the package's own earlier cards move out of `todo/` and `done/` into `帮手/`.
+- At each session's start the package's own earlier cards move into `帮手/`, from the person's `todo/` and `done/` and from those of each tab of the board, handled ones as finished; only a file whose head is what the package wrote moves, and nothing in `帮手/` is overwritten.
+- A card's time runs only while its helper works (`ran`, `since`), and a name is written as the seller typed it. A name being typed stands until the seller ends it; leaving the field keeps it, and Tab or a press lands where the seller sent it.
 - The person is the one the session names, where a computer holds more than one board.
 - The tests run against pi-subagents 0.89.1 on pi 1.5.2, and `comchatx.builds` names 0.89.1 as tested.
 

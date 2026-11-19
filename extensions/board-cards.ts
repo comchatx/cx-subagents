@@ -11,8 +11,15 @@ export const TAB = "帮手";
 /** The environment the computer hands each person's pi, naming that person's board (`CX_PERSON_FACTS`). */
 export const PERSON_FACTS = "CX_PERSON_FACTS";
 const BOARD = "board";
-/** Where the package's cards went before the tab: the person's `todo/` and `done/`. */
+/** The places the package's cards went before the tab: a `todo/` and a `done/`, the person's own or those of a tab of the board's. */
 const EARLIER = ["todo", "done"] as const;
+/**
+ * What tells a card the package wrote before the tab: its name, a start's time then `-subagent-` and the run, and its head as 0.3.5 and
+ * every version before it wrote one, `kind: finding`, the title as one JSON string and the start in ISO 8601 UTC, in that order, with no
+ * other line but the `done`, `doneAt` and `answer` the board's module adds to one the seller handled.
+ */
+const EARLIER_NAME = /^\d{8}-\d{6}-subagent-[A-Za-z0-9_-]+\.md$/;
+const EARLIER_HEAD = /^---\nkind: finding\ntitle: "(?:[^"\\\n]|\\.)*"\nat: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z(?:\n(?:done|doneAt|answer): [^\n]*)*\n---\n/;
 const PERSON = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 /** The most of one file the board reads; a larger card is cut to it. */
 export const CARD_MAX_BYTES = 32 * 1024;
@@ -35,6 +42,9 @@ export type Card = {
   /** When it ended, ms; and how long it ran, in seconds. */
   readonly ended?: number;
   readonly took?: number;
+  /** The seconds it worked before its present stretch at work, and when that stretch began, ms: the time it ran counts only at work. */
+  readonly ran?: number;
+  readonly since?: number;
   readonly run: string;
   /** pi-subagents' folder for the run, which holds its `status.json` and `events.jsonl`. */
   readonly dir?: string;
@@ -72,6 +82,8 @@ export function cardText(card: Card): string {
   const facts: [string, unknown][] = [["kind", "helper"], ["title", card.name], ["face", card.face], ["state", card.state], ["at", iso(card.at)]];
   if (card.ended !== undefined) facts.push(["ended", iso(card.ended)]);
   if (card.took !== undefined) facts.push(["took", card.took]);
+  if (card.ran !== undefined) facts.push(["ran", card.ran]);
+  if (card.since !== undefined) facts.push(["since", iso(card.since)]);
   facts.push(["run", card.run]);
   if (card.dir !== undefined) facts.push(["dir", card.dir]);
   const head = `---\n${facts.map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join("\n")}\n---\n\n`;
@@ -98,12 +110,15 @@ export function readCard(file: string, raw: string): ReadCard | undefined {
   const face = facts.get("face");
   const took = facts.get("took");
   const ended = time("ended");
+  const since = time("since");
+  const ran = facts.get("ran");
   const dir = text(facts.get("dir"));
   const run = text(facts.get("run")) ?? (/-subagent-([A-Za-z0-9_-]+)\.md$/.exec(file)?.[1] ?? "");
   return {
     file, name: text(facts.get("title")) ?? "", at, run, task: match[2]!.replace(/\n$/, ""),
     ...(state === undefined ? {} : { state }), ...(typeof face === "number" && Number.isInteger(face) ? { face } : {}),
     ...(ended === undefined ? {} : { ended }), ...(typeof took === "number" ? { took } : {}), ...(dir === undefined ? {} : { dir }),
+    ...(typeof ran === "number" ? { ran } : {}), ...(since === undefined ? {} : { since }),
   };
 }
 
@@ -157,34 +172,47 @@ function found(person: string, run: string): ReadCard | undefined {
 /** The next face: one after the highest any card in the tab holds. */
 const nextFace = (person: string): number => cardsIn(person).reduce((most, card) => Math.max(most, (card.face ?? -1) + 1), 0);
 
+/** Every place a card of the package's from before the tab can lie: the person's `todo/` and `done/`, and those of each tab of the board. */
+function earlierPlaces(person: string): string[] {
+  let tabs: string[];
+  try { tabs = readdirSync(person, { withFileTypes: true }).filter((one) => one.isDirectory() && !one.name.startsWith(".") && one.name !== TAB && !(EARLIER as readonly string[]).includes(one.name)).map((one) => one.name).sort(); } catch { return []; }
+  return [...EARLIER.map((place) => join(person, place)), ...tabs.flatMap((tab) => EARLIER.map((place) => join(person, tab, place)))];
+}
+
 /**
- * The package's cards from before the tab, moved once into it: each `*-subagent-*.md` in the person's `todo/` and `done/`, oldest
- * first, written as a card of the tab that ended at its file's last write — at its time limit where its words begin 「超时」, else done —
- * and the earlier file removed; `todo/` and `done/` are then removed where nothing else is left in them. The seller's own files stay.
+ * The package's cards from before the tab, moved into it: each file that reads as one (`EARLIER_NAME`, `EARLIER_HEAD`), from every place
+ * one can lie, written as a card of the tab that ended at its file's last write — at its time limit where its words begin 「超时」, else
+ * done, a handled one too — and the earlier file removed. A file that does not read as one stays as it is. Where the tab's file of that
+ * name is another file, nothing is written and the earlier card stays; where it is the same run's card, only the earlier copy goes. The
+ * person's own `todo/` and `done/` are then removed where nothing else is left in them; a tab's places stay as the board made them.
  */
 export function moveEarlier(person: string): number {
   let moved = 0;
-  for (const place of EARLIER) {
-    const from = join(person, place);
+  for (const from of earlierPlaces(person)) {
     let names: string[];
-    try { names = readdirSync(from).filter((name) => OURS.test(name) && !name.startsWith(".")).sort(); } catch { continue; }
+    try { names = readdirSync(from).filter((name) => EARLIER_NAME.test(name)).sort(); } catch { continue; }
     for (const name of names) {
       const path = join(from, name);
       let raw: string;
       let modified: number;
       try { raw = readFileSync(path, "utf8"); modified = statSync(path).mtimeMs; } catch { continue; }
+      if (!EARLIER_HEAD.test(raw)) continue;
       const old = readCard(name, raw);
-      const at = old?.at ?? modified;
-      const words = old?.task ?? "";
-      if (found(person, old?.run ?? "") === undefined) {
+      if (old === undefined) continue;
+      const there = join(tabDir(person), name);
+      if (existsSync(there)) {
+        let same = false;
+        try { const raw = readFileSync(there, "utf8"); same = /^kind: "helper"$/m.test(raw) && readCard(name, raw)?.run === old.run; } catch { /* read as another file */ }
+        if (!same) continue;
+      } else {
         write(person, {
-          file: name, name: old?.name ?? "", face: nextFace(person), state: /^超时(\n|$)/.test(words) ? "timeout" : "done",
-          at, ended: modified, took: Math.max(0, Math.round((modified - at) / 1000)), run: old?.run ?? "", task: words,
+          file: name, name: old.name, face: nextFace(person), state: /^超时(\n|$)/.test(old.task) ? "timeout" : "done",
+          at: old.at, ended: modified, took: Math.max(0, Math.round((modified - old.at) / 1000)), run: old.run, task: old.task,
         });
       }
       try { unlinkSync(path); moved += 1; } catch { /* left as it is */ }
     }
-    try { rmdirSync(from); } catch { /* the seller's files are in it */ }
+    if (EARLIER.some((place) => from === join(person, place))) try { rmdirSync(from); } catch { /* the seller's files are in it */ }
   }
   return moved;
 }
@@ -276,6 +304,8 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
   const followers = new Map<string, Follower>();
   let cwd = process.cwd();
 
+  /** The seconds a card at work has worked so far: before its present stretch, and in it. */
+  const worked = (card: Card): number => (card.ran ?? 0) + (card.since === undefined ? 0 : Math.max(0, Math.round((now() - card.since) / 1000)));
   /** Rewrites a run's card with what changed, the name and face its file holds kept. */
   const update = (person: string, run: string, change: (card: Card) => Card): void => {
     const card = found(person, run);
@@ -292,10 +322,10 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
       if (id === undefined) return;
       if (event["type"] === "tool_execution_start" && asksCx(event["toolName"], event["args"])) {
         waits.add(id);
-        update(person, run, (card) => (card.state === "working" ? { ...card, state: "waiting" } : card));
+        update(person, run, (card) => (card.state === "working" ? (({ since: _since, ...rest }) => ({ ...rest, state: "waiting" as const, ran: worked(card) }))(card) : card));
       }
       if (event["type"] === "tool_execution_end" && waits.delete(id) && waits.size === 0) {
-        update(person, run, (card) => (card.state === "waiting" ? { ...card, state: "working" } : card));
+        update(person, run, (card) => (card.state === "waiting" ? { ...card, state: "working", since: now() } : card));
       }
     });
     followers.set(run, follower);
@@ -335,7 +365,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     write(person, {
       file: before?.file ?? `${stamp(at)}${suffix(run)}`,
       name: before?.name || firstLine(task) || (text(event["agent"]) ?? "subagent"),
-      face: before?.face ?? nextFace(person), state: "working", at, run, task, ...(dir === undefined ? {} : { dir }),
+      face: before?.face ?? nextFace(person), state: "working", at, ran: 0, since: at, run, task, ...(dir === undefined ? {} : { dir }),
     });
     if (dir !== undefined) follow(person, run, dir);
   });
@@ -352,7 +382,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const dir = card?.dir ?? text(event["asyncDir"]);
     write(person, {
       file: card?.file ?? `${stamp(ended)}${suffix(run)}`, name: card?.name || (text(event["agent"]) ?? "subagent"), face: card?.face ?? nextFace(person),
-      state: endState(event), at: card?.at ?? ended, ended, took, run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
+      state: endState(event), at: card?.at ?? ended, ended, took, ran: took, run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
     });
   });
 }
