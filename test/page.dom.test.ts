@@ -428,6 +428,55 @@ it("writes to a helper in the board's own message box, sends the words to cx wit
   expect([p.document.querySelector(".hc-note"), (p.document.querySelector(".hc-card .cx-box textarea") as unknown as Field).value]).toEqual([null, ""]);
 });
 
+const stepsOn = (document: Window["document"], file: string) => [...document.getElementById(file)!.querySelectorAll(".hc-steps > li")].map((one) => [one.getAttribute("data-step"), one.querySelector("span[dir]")?.textContent, one.querySelector(".hc-step-mark")?.firstElementChild?.tagName.toLowerCase()]);
+const STEPS = [{ words: "读取评论", state: "done" }, { words: "对比价格", state: "now" }, { words: "写报告", state: "todo" }] as const;
+
+it("draws a helper's steps under its head as its card stands: the one in work held while paused or waiting, cut off once it ended", async () => {
+  const p = page([
+    card("a-subagent-1.md", { state: "working", at: T0 + 6, steps: STEPS }),
+    card("b-subagent-2.md", { state: "paused", at: T0 + 5, steps: STEPS }),
+    card("c-subagent-3.md", { state: "waiting", at: T0 + 4, steps: STEPS }),
+    card("d-subagent-4.md", { state: "stopped", at: T0 + 3, ended: T0 + 60_000, steps: STEPS }),
+    card("e-subagent-5.md", { state: "done", at: T0 + 2, ended: T0 + 60_000, took: 60, steps: STEPS }),
+    card("f-subagent-6.md", { state: "working", at: T0 + 1 }),
+  ]);
+  await settle();
+  const marks = (now: string, tag: string) => [["done", "读取评论（已完成）", "svg"], [now, `对比价格（${{ now: "进行中", held: "已暂停", cut: "未完成" }[now]}）`, tag], ["todo", "写报告（未开始）", "svg"]];
+  expect(stepsOn(p.document, "a-subagent-1.md")).toEqual(marks("now", "span"));
+  expect(stepsOn(p.document, "b-subagent-2.md")).toEqual(marks("held", "svg"));
+  expect(stepsOn(p.document, "c-subagent-3.md")).toEqual(marks("held", "svg"));
+  expect(stepsOn(p.document, "d-subagent-4.md")).toEqual(marks("cut", "svg"));
+  expect(stepsOn(p.document, "e-subagent-5.md")).toEqual(marks("cut", "svg"));
+  expect(p.document.getElementById("f-subagent-6.md")!.querySelector(".hc-steps")).toBeNull();
+  // Under the head and the question before a stop, before what it wrote.
+  const one = p.document.getElementById("a-subagent-1.md")!;
+  expect([...one.children].map((child) => child.className)).toEqual(["hc-head", "hc-steps"]);
+});
+
+it("draws the steps at once as a press leaves them, and in the board's language", async () => {
+  const p = page([card("a-subagent-1.md", { state: "working", steps: STEPS, files: ["reports/a.md"] })], "en");
+  await settle();
+  expect(stepsOn(p.document, "a-subagent-1.md").map(([state, words]) => [state, words])).toEqual([["done", "读取评论 (Done)"], ["now", "对比价格 (In progress)"], ["todo", "写报告 (Not started)"]]);
+  (p.document.querySelector('[data-act="pause"]') as unknown as Press).click();
+  expect(stepsOn(p.document, "a-subagent-1.md")[1]![0]).toBe("held");
+  await p.change(card("a-subagent-1.md", { state: "paused", steps: STEPS, files: ["reports/a.md"] }));
+  (p.document.querySelector('[data-act="resume"]') as unknown as Press).click();
+  expect(stepsOn(p.document, "a-subagent-1.md")[1]![0]).toBe("now");
+  (p.document.querySelector('[data-act="stop"]') as unknown as Press).click();
+  expect([...p.document.getElementById("a-subagent-1.md")!.children].map((child) => child.className)).toEqual(["hc-head", "hc-ask", "hc-steps", "hc-files"]);
+  (p.document.querySelector('[data-act="stop-yes"]') as unknown as Press).click();
+  expect(stepsOn(p.document, "a-subagent-1.md")[1]![0]).toBe("cut");
+});
+
+it("draws only the steps its file holds as steps: an entry with no words or a state of its own is left out", async () => {
+  const p = page([card("a-subagent-1.md", { state: "working" })]);
+  await settle();
+  const text = p.store.get("a-subagent-1.md")!.text.replace(/\n---\n/, `\nsteps: ${JSON.stringify([{ words: "", state: "done" }, { words: "x", state: "deleted" }, { state: "now" }, "y", { words: "留下", state: "todo" }])}\n---\n`);
+  p.store.set("a-subagent-1.md", { text, modified: 99 });
+  await p.hear("files");
+  expect(stepsOn(p.document, "a-subagent-1.md")).toEqual([["todo", "留下（未开始）", "svg"]]);
+});
+
 it("writes a press into the card's head alone: a line of the task that begins `press: ` stays", async () => {
   const p = page([card("a-subagent-1.md", { name: "竞品对比", state: "working", task: "check prices\npress: the hardest point first" })]);
   await settle();

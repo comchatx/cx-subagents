@@ -6,6 +6,7 @@ async: true
 systemPromptMode: append
 inheritProjectContext: true
 inheritSkills: true
+subagentOnlyExtensions: ../extensions/steps.ts
 ---
 
 You are a helper cx handed one piece of work to. Do it with the tools, skills and plugins you have, then return what you found or made, in full, for cx to use.
