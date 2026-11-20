@@ -5,6 +5,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 /** pi-subagents' events for a background run, on the session's bus (`pi-subagents` `src/shared/types.js`). */
 export const STARTED = "subagent:async-started";
 export const COMPLETE = "subagent:async-complete";
+/** pi-subagents' control of a run on the same bus: a request, and its reply under the request's own id (`src/extension/rpc.js`). */
+export const RPC_REQUEST = "subagents:rpc:v1:request";
+const RPC_REPLY = "subagents:rpc:v1:reply:";
+/** A question a helper asks cx, as it reaches cx's conversation (`subagent_supervisor_request`), with the run in its details. */
+export const QUESTION = "subagent_supervisor_request";
+/** What a paused helper is told when the seller lets it go on: pi-subagents' `resume` takes a message and starts the run again from its session. */
+export const CONTINUE_PAUSED = "Go on with your task from where you paused.";
 
 /** The package's own tab on the person's board, declared in `package.json` (`comchatx.board`), and the folder its cards are in. */
 export const TAB = "帮手";
@@ -35,6 +42,10 @@ const TRUNCATED = "subagent.events.truncated";
 export type State = "working" | "waiting" | "paused" | "done" | "failed" | "timeout" | "stopped" | "off";
 const AT_WORK: ReadonlySet<string> = new Set(["working", "waiting", "paused"]);
 
+/** What the seller pressed on a card, written into it by the page: the package does it and writes the card again without it. */
+export type Press = "pause" | "resume" | "stop" | "remove";
+const PRESSES: ReadonlySet<string> = new Set(["pause", "resume", "stop", "remove"]);
+
 /** A card's facts: the front matter the page reads, the task under it. */
 export type Card = {
   readonly file: string;
@@ -58,7 +69,7 @@ export type Card = {
   readonly task: string;
 };
 /** A card as read back: one of the package's earlier versions (`kind: finding`) has no state and no face. */
-export type ReadCard = Omit<Card, "state" | "face"> & { readonly state?: State; readonly face?: number };
+export type ReadCard = Omit<Card, "state" | "face"> & { readonly state?: State; readonly face?: number; readonly press?: Press };
 /** This boot of the computer, as pi-subagents reads it on Linux; none where the system gives none. */
 const linuxBoot = (): string | undefined => { try { return readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() || undefined; } catch { return undefined; } };
 type Options = { readonly now?: () => number; readonly boot?: () => string | undefined };
@@ -128,12 +139,14 @@ export function readCard(file: string, raw: string): ReadCard | undefined {
   const files = list("files");
   const reads = list("reads");
   const run = text(facts.get("run")) ?? (/-subagent-([A-Za-z0-9_-]+)\.md$/.exec(file)?.[1] ?? "");
+  const press = text(facts.get("press"));
   return {
     file, name: text(facts.get("title")) ?? "", at, run, task: match[2]!.replace(/\n$/, ""),
     ...(state === undefined ? {} : { state }), ...(typeof face === "number" && Number.isInteger(face) ? { face } : {}),
     ...(ended === undefined ? {} : { ended }), ...(typeof took === "number" ? { took } : {}), ...(dir === undefined ? {} : { dir }),
     ...(typeof ran === "number" ? { ran } : {}), ...(since === undefined ? {} : { since }),
     ...(files === undefined ? {} : { files }), ...(reads === undefined ? {} : { reads }),
+    ...(press !== undefined && PRESSES.has(press) ? { press: press as Press } : {}),
   };
 }
 
@@ -174,14 +187,18 @@ function write(person: string, card: Card): void {
   renameSync(temp, join(dir, card.file));
 }
 
-/** The card a run has in the tab, by its run id, read again: the name the seller gave it is the file's, not the session's. */
+/**
+ * The card a run has in the tab, read again: the name the seller gave it is the file's, not the session's. A card is named for its first
+ * run; one continued since names its present run in its `run`.
+ */
 function found(person: string, run: string): ReadCard | undefined {
   if (run === "") return undefined;
   let names: string[];
   try { names = readdirSync(tabDir(person)); } catch { return undefined; }
   const name = names.filter((one) => one.endsWith(suffix(run)) && !one.startsWith(".")).sort().at(-1);
-  if (name === undefined) return undefined;
-  try { return readCard(name, readFileSync(join(tabDir(person), name), "utf8")); } catch { return undefined; }
+  const named = name === undefined ? undefined : (() => { try { return readCard(name, readFileSync(join(tabDir(person), name), "utf8")); } catch { return undefined; } })();
+  if (named !== undefined && named.run === run) return named;
+  return cardsIn(person).filter((card) => card.run === run).at(-1);
 }
 
 /** The next face: one after the highest any card in the tab holds. */
@@ -378,11 +395,24 @@ class Follower {
   stop(): void { this.#watcher?.close(); this.#watcher = undefined; }
 }
 
+/** A run's `resume` the package hears of while it is asked: the run it continues, and the card that run is on. */
+type Resuming = { readonly from: string; readonly key: string };
+
+/** The words of a message as cx's model reads it, and the same message with a line added at its end. */
+const wordsOf = (content: unknown): string => (typeof content === "string" ? content : Array.isArray(content) ? content.map((part) => text(record(part)["text"]) ?? "").join("") : "");
+const withLine = <T extends Record<string, unknown>>(message: T, line: string): T => {
+  const content = message["content"];
+  return { ...message, content: typeof content === "string" ? `${content}\n\n${line}` : [...(Array.isArray(content) ? content : []), { type: "text", text: `\n\n${line}` }] };
+};
+/** A message the seller sent a helper from its card, `**@name** words`: the name. */
+const ADDRESSED = /^\*\*@([^*\n]+)\*\*/;
+
 /**
  * Each background run of pi-subagents is a card in the package's tab on the asker's board: at its start, at work, its task's first line
  * its name, its face the next in order; waiting for cx's answer while it asks cx, and at work again when the answer comes; at its end,
- * done, stopped, at its time limit or failed, with when and how long. A session's start moves the earlier versions' cards into the tab
- * once and marks `off` a card whose run was lost to a stop of cx's computer. The name the seller writes on the card is kept.
+ * done, stopped, paused, at its time limit or failed, with when and how long. A run continued (`resume`) goes on on its card. A session's
+ * start moves the earlier versions' cards into the tab once and marks `off` a card whose run was lost to a stop of cx's computer. The name
+ * the seller writes on the card is kept, and what the seller presses on it is done: pause, go on, stop, remove.
  */
 export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
   const now = options.now ?? Date.now;
@@ -392,17 +422,65 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
   const followers = new Map<string, Follower>();
   /** The runs whose `events.jsonl` reached its bound: their lists are filled from the helper's session file at the end. */
   const cut = new Set<string>();
+  /** The resumes being asked, by who asks: a `subagent` call's id, or the package's own request. */
+  const resuming = new Map<string, Resuming>();
+  /** The cards whose press is being done, so a second look at the tab does not do it twice. */
+  const pressing = new Set<string>();
+  /** What was added to a message for cx, by the message, so a message reads the same at every request. */
+  const added = new Map<string, string>();
+  let tabWatch: FSWatcher | undefined;
+  let requests = 0;
   let cwd = process.cwd();
 
   /** The seconds a card at work has worked so far: before its present stretch, and in it. */
   const worked = (card: Pick<Card, "ran" | "since">): number => (card.ran ?? 0) + (card.since === undefined ? 0 : Math.max(0, Math.round((now() - card.since) / 1000)));
+  const whole = (card: ReadCard): Card => { const { press: _press, ...rest } = card; return { ...rest, face: card.face ?? 0, state: card.state ?? "working" }; };
   /** Rewrites a run's card with what changed, the name and face its file holds kept. */
   const update = (person: string, run: string, change: (card: Card) => Card): void => {
     const card = found(person, run);
     if (card?.state === undefined) return;
-    const next = change({ ...card, face: card.face ?? 0, state: card.state });
+    const next = change(whole(card));
     if (next.state !== card.state || next.files?.length !== card.files?.length || next.reads?.length !== card.reads?.length) write(person, next);
   };
+
+  /** One request to pi-subagents' control, answered by its reply. */
+  const control = (method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> => new Promise((done) => {
+    const requestId = `cx-subagents-${process.pid}-${requests++}`;
+    const off = pi.events.on(`${RPC_REPLY}${requestId}`, (reply) => { if (typeof off === "function") off(); done(record(reply)); });
+    pi.events.emit(RPC_REQUEST, { version: 1, requestId, method, params, source: { extension: "cx-subagents" } });
+  });
+
+  /**
+   * What the seller pressed on a card, done once: pause asks pi-subagents to interrupt the run, go on to `resume` it with
+   * `CONTINUE_PAUSED`, stop to stop it, and the run's own events then write the card. Remove takes away a card no longer at work. Where
+   * pi-subagents refuses, or the card no longer stands as the press needs, the card is written again as it stands, without the press.
+   */
+  const doPress = async (person: string, card: ReadCard): Promise<void> => {
+    if (card.press === undefined || pressing.has(card.file)) return;
+    pressing.add(card.file);
+    const atWork = card.state !== undefined && AT_WORK.has(card.state);
+    try {
+      if (card.press === "remove") {
+        if (atWork) write(person, whole(card));
+        else try { unlinkSync(join(tabDir(person), card.file)); } catch { /* gone already */ }
+        return;
+      }
+      const ask = card.press === "pause" ? (card.state === "working" || card.state === "waiting") && control("interrupt", { id: card.run })
+        : card.press === "stop" ? atWork && control("stop", { id: card.run })
+          : card.state === "paused" && (() => {
+            const key = `press:${card.file}`;
+            resuming.set(key, { from: card.run, key: card.file });
+            return control("resume", { id: card.run, message: CONTINUE_PAUSED }).finally(() => resuming.delete(key));
+          })();
+      // Done, the run's own events write the card, without the press: a pause's or a stop's end, a resume's start.
+      if (ask !== false && (await ask)["success"] === true) return;
+      const stands = cardsIn(person).find((one) => one.file === card.file);
+      if (stands?.press !== undefined) write(person, whole(stands));
+    } finally {
+      pressing.delete(card.file);
+    }
+  };
+  const presses = (person: string): void => { for (const card of cardsIn(person)) if (card.press !== undefined) void doPress(person, card); };
 
   const follow = (person: string, run: string, dir: string): void => {
     if (followers.has(run)) return;
@@ -438,16 +516,52 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     moveEarlier(person);
     markOff(person, boot());
     for (const card of cardsIn(person)) if (card.state !== undefined && AT_WORK.has(card.state) && card.dir !== undefined) follow(person, card.run, card.dir);
+    mkdirSync(tabDir(person), { recursive: true });
+    try { tabWatch = watch(tabDir(person), () => presses(person)); tabWatch.on("error", () => { tabWatch?.close(); tabWatch = undefined; }); } catch { /* no presses heard */ }
+    presses(person);
   });
-  pi.on("session_shutdown", () => { for (const run of [...followers.keys()]) unfollow(run); });
+  pi.on("session_shutdown", () => { for (const run of [...followers.keys()]) unfollow(run); tabWatch?.close(); tabWatch = undefined; });
   pi.on("tool_call", (event, ctx) => {
     cwd = ctx.cwd;
     if (event.toolName !== "subagent") return;
-    asked.set(event.toolCallId, taskOf(record(event.input)));
+    const input = record(event.input);
+    const from = text(input["id"]) ?? text(input["runId"]);
+    if (input["action"] === "resume" && from !== undefined) resuming.set(event.toolCallId, { from, key: event.toolCallId });
+    asked.set(event.toolCallId, taskOf(input));
     running.add(event.toolCallId);
     for (const old of asked.keys()) if (asked.size > ASKED_KEPT) asked.delete(old);
   });
-  pi.on("tool_result", (event) => { running.delete(event.toolCallId); });
+  pi.on("tool_result", (event) => { running.delete(event.toolCallId); resuming.delete(event.toolCallId); });
+
+  /**
+   * What cx's model reads, with the card's name where cx cannot know it: a helper's question says which card asks, and the seller's
+   * message to a helper which run the card's name is. Each line is made once a message, so the conversation reads the same each time.
+   */
+  pi.on("context", (event) => {
+    const person = personDir(cwd);
+    if (person === undefined) return;
+    let changed = false;
+    const messages = event.messages.map((message) => {
+      const one = message as unknown as Record<string, unknown>;
+      const key = `${String(one["role"])}:${String(one["timestamp"])}`;
+      let line = added.get(key);
+      if (line === undefined) {
+        if (one["role"] === "custom" && one["customType"] === QUESTION) {
+          const card = found(person, text(record(one["details"])["runId"]) ?? "");
+          if (card !== undefined && card.name !== "") line = `(On the seller's board this helper is the card “${card.name}”.)`;
+        } else if (one["role"] === "user") {
+          const name = ADDRESSED.exec(wordsOf(one["content"]).trimStart())?.[1]?.trim();
+          const card = name === undefined ? undefined : cardsIn(person).filter((each) => each.name === name).sort((a, b) => Number(b.state !== undefined && AT_WORK.has(b.state)) - Number(a.state !== undefined && AT_WORK.has(a.state)) || b.at - a.at)[0];
+          if (card !== undefined) line = `(The card “${card.name}” on the seller's board is helper run ${card.run}.)`;
+        }
+        if (line === undefined) return message;
+        added.set(key, line);
+      }
+      changed = true;
+      return withLine(one, line) as unknown as typeof message;
+    });
+    return changed ? { messages } : undefined;
+  });
 
   pi.events.on(STARTED, (data) => {
     const event = record(data);
@@ -455,11 +569,19 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const person = personDir(cwd);
     if (run === undefined || person === undefined) return;
     const toolCallId = text(event["toolCallId"]);
+    const at = now();
+    const dir = text(event["asyncDir"]);
+    // A run continued from another starts with no call of its own; while one resume alone is asked, the run is that one's, on its card.
+    const continued = toolCallId === undefined && resuming.size === 1 ? found(person, [...resuming.values()][0]!.from) : undefined;
+    if (continued !== undefined) {
+      const { ended: _ended, took: _took, ...card } = whole(continued);
+      write(person, { ...card, state: "working", ran: card.ran ?? 0, since: at, run, ...(dir === undefined ? {} : { dir }) });
+      if (dir !== undefined) follow(person, run, dir);
+      return;
+    }
     const own = toolCallId === undefined ? undefined : asked.get(toolCallId);
     const task = own ?? (running.size === 1 ? asked.get([...running][0]!) : undefined) ?? "";
-    const at = now();
     const before = found(person, run);
-    const dir = text(event["asyncDir"]);
     write(person, {
       file: before?.file ?? `${stamp(at)}${suffix(run)}`,
       name: before?.name || firstLine(task) || (text(event["agent"]) ?? "subagent"),

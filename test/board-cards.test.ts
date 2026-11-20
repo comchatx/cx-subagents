@@ -56,7 +56,11 @@ function runDir(cwd: string, run: string) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "status.json"), JSON.stringify({ runId: run, state: "running" }));
   writeFileSync(join(dir, "events.jsonl"), "");
-  return { dir, event: (line: Record<string, unknown>) => appendFileSync(join(dir, "events.jsonl"), `${JSON.stringify(line)}\n`) };
+  const log = join(dir, "events.jsonl");
+  // macOS's file events can drop a change made just after a watch begins, which inotify on cx's computer does not: the log is touched
+  // again a moment later, so the follower hears the line either way.
+  const event = (line: Record<string, unknown>) => { appendFileSync(log, `${JSON.stringify(line)}\n`); setTimeout(() => { try { const now = new Date(); utimesSync(log, now, now); } catch { /* gone with its test */ } }, 100); };
+  return { dir, event };
 }
 
 async function eventually<T>(read: () => T, test: (value: T) => boolean, boundMs = 5_000): Promise<T> {
@@ -462,5 +466,5 @@ it("keeps a card's lists through its file and within their bound, the earliest k
 it("loads as pi loads it: the default export takes pi's events", () => {
   const seen: string[] = [];
   boardCardsDefault({ on: (name: string) => seen.push(name), events: { on: (name: string) => seen.push(name) } } as unknown as ExtensionAPI);
-  expect(seen.sort()).toEqual([COMPLETE, STARTED, "session_shutdown", "session_start", "tool_call", "tool_result"].sort());
+  expect(seen.sort()).toEqual([COMPLETE, STARTED, "context", "session_shutdown", "session_start", "tool_call", "tool_result"].sort());
 });

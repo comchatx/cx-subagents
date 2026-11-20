@@ -29,12 +29,30 @@ function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
   const store = new Map(files.map((one, n) => [one.file, { text: cardText(one), modified: 1000 + n }]));
   const heard = new Map<string, (() => void)[]>();
   const asked: string[] = [];
+  const refuse = { write: false };
   const cxBoard = {
     context: { locale },
     on: (name: string, listener: () => void) => { heard.set(name, [...(heard.get(name) ?? []), listener]); },
     list: async () => { asked.push("list"); return [...store].map(([file, one]) => ({ file, modified: one.modified, size: one.text.length })); },
     read: async (file: string) => { asked.push(`read ${file}`); const one = store.get(file); if (one === undefined) throw new Error("missing"); return one.text; },
-    write: async (file: string, text: string) => { asked.push(`write ${file}`); const one = { text, modified: (store.get(file)?.modified ?? 0) + 1 }; store.set(file, one); return { file, modified: one.modified, size: text.length }; },
+    write: async (file: string, text: string) => { asked.push(`write ${file}`); if (refuse.write) throw new Error("box_not_running"); const one = { text, modified: (store.get(file)?.modified ?? 0) + 1 }; store.set(file, one); return { file, modified: one.modified, size: text.length }; },
+    send: async (text: string, options?: { card?: string }) => { asked.push(`send ${options?.card} ${text}`); },
+    // The chat's message box as the board hands it: a field and its control; Enter sends the field's words, emptied once they went.
+    box: ({ placeholder, send }: { placeholder: string; send: (text: string) => Promise<unknown> }) => {
+      const box = window.document.createElement("div");
+      box.className = "cx-box";
+      const field = window.document.createElement("textarea");
+      field.setAttribute("placeholder", placeholder);
+      field.addEventListener("keydown", (raw) => {
+        const event = raw as unknown as { key: string; shiftKey?: boolean; preventDefault(): void };
+        if (event.key !== "Enter" || event.shiftKey) return;
+        event.preventDefault();
+        const words = field.value;
+        void send(words).then(() => { if (field.value === words) field.value = ""; }, () => {});
+      });
+      box.append(field, window.document.createElement("button"));
+      return box;
+    },
   };
   const figures: { state: string }[] = [];
   Object.assign(window, { cxBoard, ...(figure ? { CxCharacter: { mount: (fig: { append(node: unknown): void }, options: { state: string }) => { figures.push(options); fig.append(window.document.createElement("svg")); } } } : {}) });
@@ -43,7 +61,7 @@ function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
   const hear = async (name: string) => { for (const one of heard.get(name) ?? []) one(); await settle(); };
   const change = async (one: Card) => { store.set(one.file, { text: cardText(one), modified: (store.get(one.file)?.modified ?? 0) + 1 }); await hear("files"); };
   const tick = () => { for (const one of ticks) one(); };
-  return { document: window.document, window, store, asked, figures, hear, change, tick };
+  return { document: window.document, window, store, asked, figures, hear, change, tick, refuse };
 }
 
 const groups = (document: Window["document"]) => [...document.querySelectorAll(".hc-group")].map((group) => [group.querySelector("h2")?.textContent, [...group.querySelectorAll(".hc-card")].map((one) => [one.querySelector(".hc-name")?.textContent, one.getAttribute("data-state"), one.querySelector(".hc-line")?.textContent])]);
@@ -301,4 +319,104 @@ it("keeps the keyboard on a file's box in the part of the list it is in, where t
   await p.change({ ...one, files: ["reports/shared.md", "reports/new.md"] });
   const on = p.document.activeElement as unknown as { getAttribute(name: string): string | null; closest(selector: string): { id: string } | null };
   expect([on.getAttribute("data-cx-file"), on.closest("section")?.id, p.document.querySelectorAll("#part-files [data-cx-file]").length]).toEqual(["reports/shared.md", "part-reads", 2]);
+});
+
+const acts = (document: Window["document"], file: string) => [...document.getElementById(file)!.querySelectorAll(".hc-acts [data-act]")].map((one) => one.getAttribute("data-act"));
+const focused = (p: ReturnType<typeof page>) => p.document.activeElement?.getAttribute("data-act");
+const pressIn = (p: ReturnType<typeof page>, file: string) => /^press: (.*)$/m.exec(p.store.get(file)!.text)?.[1];
+
+it("offers each card the presses its state takes, and writes a pause and a go-on into the card, drawn at once, the keyboard on the next", async () => {
+  const p = page([
+    card("a-subagent-1.md", { name: "竞品对比", state: "working", at: T0 + 5 }),
+    card("b-subagent-2.md", { name: "评论汇总", state: "waiting", at: T0 + 4 }),
+    card("c-subagent-3.md", { name: "价格检查", state: "done", at: T0 + 3, ended: T0 + 60_000, took: 60 }),
+    card("d-subagent-4.md", { name: "库存核对", state: "stopped", at: T0 + 2, ended: T0 + 60_000 }),
+  ]);
+  await settle();
+  expect(["a-subagent-1.md", "b-subagent-2.md", "c-subagent-3.md", "d-subagent-4.md"].map((file) => acts(p.document, file))).toEqual([["tell", "pause", "stop"], ["stop"], ["tell", "remove"], ["remove"]]);
+  expect(p.document.querySelector('#a-subagent-1\\.md [data-act="pause"]')?.getAttribute("aria-label")).toBe("暂停“竞品对比”");
+  (p.document.querySelector('#a-subagent-1\\.md [data-act="pause"]') as unknown as Press).click();
+  expect(p.document.getElementById("a-subagent-1.md")?.querySelector(".hc-line")?.textContent).toBe("已暂停");
+  expect(focused(p)).toBe("resume");
+  await settle();
+  expect(pressIn(p, "a-subagent-1.md")).toBe('"pause"');
+  expect(p.store.get("a-subagent-1.md")!.text).toMatch(/\nrun: "a-subagent-1\.md"\npress: "pause"\n---\n/);
+  // The package does it and writes the card paused, without the press; the go-on is written the same way.
+  await p.change(card("a-subagent-1.md", { name: "竞品对比", state: "paused", at: T0 + 5 }));
+  (p.document.querySelector('#a-subagent-1\\.md [data-act="resume"]') as unknown as Press).click();
+  expect([p.document.getElementById("a-subagent-1.md")?.querySelector(".hc-line")?.textContent, focused(p)]).toEqual(["正在处理", "pause"]);
+  await settle();
+  expect(pressIn(p, "a-subagent-1.md")).toBe('"resume"');
+  expect(p.store.get("a-subagent-1.md")!.text.match(/^press: /gm)).toHaveLength(1);
+});
+
+it("asks before a stop, goes back on Escape or Cancel, and on Stop writes it and draws the card stopped, the keyboard on Remove", async () => {
+  const p = page([card("a-subagent-1.md", { name: "Rival comparison", state: "working" })], "en");
+  await settle();
+  (p.document.querySelector('[data-act="stop"]') as unknown as Press).click();
+  expect([p.document.querySelector(".hc-ask p")?.textContent, focused(p)]).toEqual(["Stop “Rival comparison”? It can't be resumed afterwards.", "keep"]);
+  p.document.querySelector(".hc-ask")!.dispatchEvent(new p.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  expect([p.document.querySelector(".hc-ask"), focused(p)]).toEqual([null, "stop"]);
+  (p.document.querySelector('[data-act="stop"]') as unknown as Press).click();
+  (p.document.querySelector('[data-act="keep"]') as unknown as Press).click();
+  expect([p.document.querySelector(".hc-ask"), focused(p)]).toEqual([null, "stop"]);
+  (p.document.querySelector('[data-act="stop"]') as unknown as Press).click();
+  (p.document.querySelector('[data-act="stop-yes"]') as unknown as Press).click();
+  expect([p.document.querySelector(".hc-card")?.getAttribute("data-state"), focused(p)]).toEqual(["stopped", "remove"]);
+  await settle();
+  expect(pressIn(p, "a-subagent-1.md")).toBe('"stop"');
+});
+
+it("removes an ended card at once, the keyboard on the next card's name, and draws no card whose file waits to be removed", async () => {
+  const p = page([
+    card("a-subagent-1.md", { name: "A", state: "done", at: T0 + 2, ended: T0 + 9, took: 1 }),
+    card("b-subagent-2.md", { name: "B", state: "failed", at: T0 + 1, ended: T0 + 9 }),
+  ]);
+  await settle();
+  (p.document.querySelector('#a-subagent-1\\.md [data-act="remove"]') as unknown as Press).click();
+  expect([[...p.document.querySelectorAll(".hc-card")].map((one) => one.id), (p.document.activeElement as unknown as { closest(s: string): { id: string } | null }).closest(".hc-card")?.id, focused(p)]).toEqual([["b-subagent-2.md"], "b-subagent-2.md", "name"]);
+  await settle();
+  expect(pressIn(p, "a-subagent-1.md")).toBe('"remove"');
+  await p.hear("files");
+  expect([...p.document.querySelectorAll(".hc-card")].map((one) => one.id)).toEqual(["b-subagent-2.md"]);
+  (p.document.querySelector('[data-act="remove"]') as unknown as Press).click();
+  expect([p.document.querySelector(".board-empty")?.textContent, (p.document.activeElement as unknown) === p.document.querySelector(".board-empty")]).toEqual(["cx 交给帮手的事会显示在这里。", true]);
+});
+
+it("draws the card as its file stands where the board does not take the press", async () => {
+  const p = page([card("a-subagent-1.md", { name: "A", state: "working" })]);
+  await settle();
+  p.refuse.write = true;
+  (p.document.querySelector('[data-act="pause"]') as unknown as Press).click();
+  expect(p.document.querySelector(".hc-card")?.getAttribute("data-state")).toBe("paused");
+  await settle();
+  expect([p.document.querySelector(".hc-card")?.getAttribute("data-state"), pressIn(p, "a-subagent-1.md")]).toEqual(["working", undefined]);
+});
+
+it("writes to a helper in the board's own message box, sends the words to cx with the helper named and the card, and says it went", async () => {
+  const p = page([card("a-subagent-1.md", { name: "竞品对比", state: "working" })]);
+  await settle();
+  const tell = () => p.document.querySelector('[data-act="tell"]') as unknown as Press;
+  expect([tell().getAttribute("aria-label"), tell().getAttribute("title"), tell().getAttribute("aria-expanded")]).toEqual(["给“竞品对比”发消息", "发消息", "false"]);
+  tell().click();
+  const field = p.document.querySelector(".hc-card .cx-box textarea") as unknown as Field;
+  expect([field.getAttribute("aria-label"), field.getAttribute("placeholder"), (p.document.activeElement as unknown) === field, tell().getAttribute("aria-expanded")]).toEqual(["给“竞品对比”发消息", "给帮手发消息", true, "true"]);
+  field.value = "加上德国站";
+  // Escape closes the box and keeps the words; the box comes back with them.
+  field.dispatchEvent(new p.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  expect([p.document.querySelector(".cx-box"), focused(p)]).toEqual([null, "tell"]);
+  tell().click();
+  const again = p.document.querySelector(".hc-card .cx-box textarea") as unknown as Field;
+  expect(again.value).toBe("加上德国站");
+  // A file that changes while the box is open leaves its words and the keyboard where they were.
+  await p.change(card("a-subagent-1.md", { name: "竞品对比", state: "working", files: ["a.csv"] }));
+  expect([(p.document.activeElement as unknown) === p.document.querySelector(".hc-card .cx-box textarea"), (p.document.querySelector(".hc-card .cx-box textarea") as unknown as Field).value]).toEqual([true, "加上德国站"]);
+  again.dispatchEvent(new p.window.KeyboardEvent("keydown", { key: "Enter" }));
+  await settle();
+  expect(p.asked.filter((one) => one.startsWith("send"))).toEqual(["send a-subagent-1.md **@竞品对比** 加上德国站"]);
+  expect([p.document.querySelector(".cx-box"), p.document.querySelector(".hc-note")?.textContent, focused(p), p.document.getElementById("said")?.textContent]).toEqual([null, "已交给 cx", "tell", ""]);
+  await new Promise((done) => setTimeout(done, 80));
+  expect(p.document.getElementById("said")?.textContent).toBe("已交给 cx");
+  tell().click();
+  expect([p.document.querySelector(".hc-note"), (p.document.querySelector(".hc-card .cx-box textarea") as unknown as Field).value]).toEqual([null, ""]);
 });

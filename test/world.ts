@@ -81,7 +81,7 @@ export class Box {
   stderr = "";
   #next = 0;
 
-  constructor(modelUrl: string, options: { readonly config?: boolean; readonly replay?: boolean; readonly packages?: readonly string[] } = {}) {
+  constructor(modelUrl: string, options: { readonly config?: boolean; readonly replay?: boolean; readonly packages?: readonly string[]; readonly extension?: string } = {}) {
     this.home = mkdtempSync(join(tmpdir(), "cx-subagents-"));
     const agent = join(this.home, "agent");
     const tenant = join(this.home, "tenant");
@@ -98,6 +98,10 @@ export class Box {
     if (options.replay === true) {
       mkdirSync(join(agent, "extensions"), { recursive: true });
       writeFileSync(join(agent, "extensions", "replay-start.ts"), REPLAY);
+    }
+    if (options.extension !== undefined) {
+      mkdirSync(join(agent, "extensions"), { recursive: true });
+      writeFileSync(join(agent, "extensions", "test-own.ts"), options.extension);
     }
     const env = { PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", PI_CODING_AGENT_DIR: agent, HOME: agent, PATH: process.env["PATH"] ?? "", TMPDIR: join(this.home, "tmp") };
     this.#child = spawn(process.execPath, [PI, "--mode", "rpc", "--session-dir", join(this.home, "sessions")], { cwd: tenant, env, stdio: ["pipe", "pipe", "pipe"], detached: true });

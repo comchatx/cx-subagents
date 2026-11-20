@@ -102,10 +102,24 @@
   .hc-all .hc-name { padding-top: 0; }
   .hc-all :is(h2, h3):focus { outline: none; }
   .hc-all[data-state="failed"] .hc-line, .hc-all[data-state="timeout"] .hc-line, .hc-all[data-state="off"] .hc-line { color: var(--bad); }
+
+  /* A mark to press beside the name: a glyph in a round, its word on hover and in its name, as the Inbox's cards have it. */
+  .hc-acts { flex: none; display: flex; align-items: center; min-height: var(--row); margin-inline-end: calc(var(--space-2) * -1); }
+  .hc-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--space-7); height: var(--space-7); padding: 0; border: none; border-radius: var(--radius-round); background: none; color: var(--quiet); }
+  .hc-mark:hover:not(:disabled), .hc-mark[aria-expanded="true"] { color: var(--ink); }
+  .hc-mark > .icon { width: var(--size-body); height: var(--size-body); }
+  /* A question before a stop: words, and the presses at the end. */
+  .hc-ask { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-4); }
+  .hc-ask > p { flex: 1 1 16rem; margin: 0; font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-ask > div { display: flex; gap: var(--space-4); margin-inline-start: auto; }
+  /* The message for the helper is written in the chat's own message box, which the board hands the page as it is. */
+  .hc-card > .cx-box { margin: 0; }
+  .hc-note { margin: 0; color: var(--quiet); font-size: var(--size-small); line-height: var(--leading-small); }
 </style>
 </head>
 <body class="kit">
 <div class="kit-page" id="page"></div>
+<span class="unseen" role="status" id="said"></span>
 <script>
 (() => {
   "use strict";
@@ -128,6 +142,9 @@
       off: "cx 的电脑关机，已中断",
       named: (words, name) => `${words}“${name}”`,
       rename: "重命名", name: "名称",
+      pause: "暂停", resume: "继续", stop: "停止", remove: "移除", cancel: "取消",
+      stopAsk: (name) => `停止“${name}”？停止后无法继续。`,
+      tell: "发消息", say: (name) => `给“${name}”发消息`, sayHere: "给帮手发消息", sent: "已交给 cx",
       group: { going: "进行中", done: "已完成", cut: "未完成" },
       empty: "cx 交给帮手的事会显示在这里。",
       page: "帮手",
@@ -147,6 +164,9 @@
       off: "Interrupted when cx's computer switched off",
       named: (words, name) => `${words} “${name}”`,
       rename: "Rename", name: "Name",
+      pause: "Pause", resume: "Resume", stop: "Stop", remove: "Remove", cancel: "Cancel",
+      stopAsk: (name) => `Stop “${name}”? It can't be resumed afterwards.`,
+      tell: "Message", say: (name) => `Message “${name}”`, sayHere: "Message the helper", sent: "Sent to cx",
       group: { going: "In progress", done: "Completed", cut: "Not finished" },
       empty: "What cx hands to helpers will be here.",
       page: "Helpers",
@@ -155,6 +175,8 @@
     },
   };
   const w = () => (zh() ? WORDS.zh : WORDS.en);
+  /** What the page sends for a helper: its name as a group chat names a person, then the seller's words. */
+  const toCx = (name, words) => `**@${name}** ${words}`;
 
   // A face is a number the package gives each helper in order: the next of 108 ordered pairs of eleven colours. The colours stand round a
   // ring in an order in which neighbours differ most; face n in the first round takes a colour and its neighbour, in the next round the
@@ -200,7 +222,19 @@
     const at = Date.parse(facts.at), ended = Date.parse(facts.ended), since = Date.parse(facts.since);
     if (facts.kind !== "helper" || !Number.isFinite(at)) return undefined;
     const list = (value) => (Array.isArray(value) ? value.filter((one) => typeof one === "string" && one !== "") : []);
-    return { file, raw, name: String(facts.title ?? ""), face: Number.isInteger(facts.face) ? facts.face : 0, state: String(facts.state ?? "done"), at, ended: Number.isFinite(ended) ? ended : undefined, took: typeof facts.took === "number" ? facts.took : undefined, ran: typeof facts.ran === "number" ? facts.ran : 0, since: Number.isFinite(since) ? since : undefined, files: list(facts.files), reads: list(facts.reads) };
+    return pressedAs({ file, raw, name: String(facts.title ?? ""), face: Number.isInteger(facts.face) ? facts.face : 0, state: String(facts.state ?? "done"), at, ended: Number.isFinite(ended) ? ended : undefined, took: typeof facts.took === "number" ? facts.took : undefined, ran: typeof facts.ran === "number" ? facts.ran : 0, since: Number.isFinite(since) ? since : undefined, files: list(facts.files), reads: list(facts.reads), press: typeof facts.press === "string" ? facts.press : undefined });
+  }
+
+  /**
+   * A card as the seller's press leaves it, while the press waits in its file for the package to do: paused, at work again, stopped, or
+   * gone. The package writes the card again once it is done, and the card is then drawn as the run stands.
+   */
+  function pressedAs(one) {
+    const ran = one.ran + (one.state === "working" && one.since !== undefined ? Math.max(0, Math.floor((Date.now() - one.since) / 1000)) : 0);
+    if (one.press === "pause" && (one.state === "working" || one.state === "waiting")) return { ...one, state: "paused", ran, since: undefined };
+    if (one.press === "resume" && one.state === "paused") return { ...one, state: "working", since: Date.now() };
+    if (one.press === "stop" && atWork(one)) return { ...one, state: "stopped", ended: Date.now(), ran, since: undefined };
+    return one;
   }
 
   const page = document.getElementById("page");
@@ -208,6 +242,14 @@
   const cards = new Map();
   /** What the seller has open on a card: its name's field. */
   const naming = new Set();
+  /** What the seller has open on a card besides: the question before a stop, the message box, and the line once a message went. */
+  const asking = new Set();
+  const saying = new Set();
+  const notes = new Set();
+  /** Each card's message box, the board's own, kept while the page draws again so its words stay. */
+  const boxes = new Map();
+  const said = document.getElementById("said");
+  const say = (words) => { said.textContent = ""; setTimeout(() => { said.textContent = words; }, 50); };
 
   /** A time since in the build's own words: seconds under a minute, then minutes, then hours and minutes. */
   const span = (seconds) => seconds < 60 ? w().seconds(Math.max(1, Math.floor(seconds))) : seconds < 3600 ? w().minutes(Math.floor(seconds / 60)) : w().hoursMinutes(Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60));
@@ -251,6 +293,51 @@
       if (next !== raw) await board.write(card.file, next);
     } catch { /* the board's next read draws the name the file holds */ }
   }
+
+  /**
+   * Writes the seller's press into the card's file, read again first, for the package to do; the card is drawn as the press leaves it at
+   * once. Where the board does not take the write, the card is read again and drawn as its file stands.
+   */
+  async function pressOn(one, press) {
+    const was = cards.get(one.file);
+    if (press === "remove") cards.delete(one.file);
+    else if (was !== undefined) cards.set(one.file, { ...pressedAs({ ...was, press }), modified: was.modified });
+    draw();
+    try {
+      const raw = await board.read(one.file);
+      await board.write(one.file, raw.replace(/^press: .*\n/m, "").replace(/\n---\n/, `\npress: ${JSON.stringify(press)}\n---\n`));
+    } catch {
+      const now = cards.get(one.file);
+      if (now !== undefined) now.modified = undefined;
+      else if (was !== undefined) cards.set(one.file, { ...was, modified: undefined });
+      read();
+    }
+  }
+
+  /** The message box for one card, the board's own: Enter sends, Escape closes it and keeps what was written. */
+  function sayBox(one) {
+    let box = boxes.get(one.file);
+    if (box === undefined) {
+      box = board.box({ placeholder: w().sayHere, send: async (words) => {
+        const text = words.trim();
+        if (text === "") return;
+        await board.send(toCx(cards.get(one.file)?.name ?? one.name, text), { card: one.file });
+        saying.delete(one.file);
+        notes.add(one.file);
+        boxes.delete(one.file);
+        draw();
+        focusOn(one, '[data-act="tell"]');
+        say(w().sent);
+      } });
+      box.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); saying.delete(one.file); draw(); focusOn(one, '[data-act="tell"]'); } });
+      boxes.set(one.file, box);
+    }
+    const field = box.querySelector("textarea, input");
+    field?.setAttribute("aria-label", w().say(one.name));
+    field?.setAttribute("data-act", "say");
+    return box;
+  }
+  const boxEnd = (one) => { const field = document.getElementById(one.file)?.querySelector('[data-act="say"]'); if (field) { field.focus({ preventScroll: true }); field.setSelectionRange?.(field.value.length, field.value.length); } };
 
   /** A page it read is an address; anything else it read is a file, by its path in cx's folder. */
   const isPage = (one) => /^https?:\/\//i.test(one);
@@ -346,9 +433,34 @@
       : h("h3", { class: "hc-name", id: `${one.file}-name`, dir: "auto" },
         h("button", { type: "button", "data-act": "name", title: w().rename, "aria-label": w().named(w().rename, one.name), onclick: () => { naming.add(one.file); draw(); const input = document.getElementById(one.file)?.querySelector('[data-act="name-field"]'); input?.focus(); input?.select(); } }, one.name));
     const age = atWork(one) ? h("span", { class: "hc-age", "data-age": one.file, "aria-label": w().ran(span(ran(one))) }, span(ran(one))) : null;
+    // What the seller can do with the helper: write to it through cx while it works, is paused or ended with something to go on from;
+    // pause it at work and let a paused one go on; stop one at work after a question; remove one that is no longer at work.
+    const hears = one.state === "working" || one.state === "paused" || one.state === "done" || one.state === "failed";
+    const asks = asking.has(one.file) && atWork(one);
+    const says = saying.has(one.file) && hears && !asks;
+    const mark = (act, words, paths, onclick) => h("button", { type: "button", class: "hc-mark", "data-act": act, "aria-label": w().named(words, one.name), title: words, onclick }, icon(...paths));
+    const acts = [
+      hears && h("button", { type: "button", class: "hc-mark", "data-act": "tell", "aria-label": w().say(one.name), title: w().tell, "aria-expanded": String(says),
+        onclick: () => { notes.delete(one.file); if (saying.has(one.file)) { saying.delete(one.file); draw(); focusOn(one, '[data-act="tell"]'); } else { saying.add(one.file); draw(); boxEnd(one); } } }, icon("M5 6h14v10h-7.5L7.5 19.5V16H5z")),
+      one.state === "working" && mark("pause", w().pause, ["M9 5.5v13", "M15 5.5v13"], () => { pressOn(one, "pause"); focusOn(one, '[data-act="resume"]'); say(w().paused); }),
+      one.state === "paused" && mark("resume", w().resume, ["M8 5.5v13l10.5-6.5z"], () => { pressOn(one, "resume"); focusOn(one, '[data-act="pause"]'); }),
+      atWork(one) && mark("stop", w().stop, ["M6.5 6.5h11v11h-11z"], () => { asking.add(one.file); draw(); focusOn(one, '[data-act="keep"]'); }),
+      !atWork(one) && mark("remove", w().remove, ["M6.5 6.5l11 11", "M17.5 6.5l-11 11"], () => {
+        const at = [...page.querySelectorAll(".hc-card")].findIndex((each) => each.id === one.file);
+        pressOn(one, "remove");
+        const left = [...page.querySelectorAll(".hc-card")];
+        (left[Math.min(at, left.length - 1)]?.querySelector("[data-act]") ?? page.querySelector(".board-empty"))?.focus({ preventScroll: true });
+      }),
+    ];
     const head = h("div", { class: "hc-head" }, face(one),
-      h("div", { class: "hc-id" }, h("div", { class: "hc-top" }, name), h("p", { class: "hc-now" }, h("span", { class: "hc-line" }, nowLine(one)), age)));
-    return h("li", {}, h("article", { class: "entry hc-card", id: one.file, "data-state": one.state, "aria-labelledby": naming.has(one.file) ? undefined : `${one.file}-name`, "aria-label": naming.has(one.file) ? one.name : undefined }, head, lists(one)));
+      h("div", { class: "hc-id" }, h("div", { class: "hc-top" }, name, h("div", { class: "hc-acts" }, acts)), h("p", { class: "hc-now" }, h("span", { class: "hc-line" }, nowLine(one)), age)));
+    const ask = asks && h("div", { class: "hc-ask", role: "group", "aria-label": w().stopAsk(one.name), onkeydown: (event) => { if (event.key === "Escape") { event.preventDefault(); asking.delete(one.file); draw(); focusOn(one, '[data-act="stop"]'); } } },
+      h("p", {}, w().stopAsk(one.name)), h("div", {},
+        h("button", { type: "button", "data-act": "keep", onclick: () => { asking.delete(one.file); draw(); focusOn(one, '[data-act="stop"]'); } }, w().cancel),
+        h("button", { type: "button", "data-act": "stop-yes", onclick: () => { asking.delete(one.file); saying.delete(one.file); notes.delete(one.file); pressOn(one, "stop"); focusOn(one, '[data-act="remove"]'); say(w().stopped(clock(Date.now()))); } }, w().stop)));
+    const note = notes.has(one.file) && !says && h("p", { class: "hc-note" }, w().sent);
+    return h("li", {}, h("article", { class: "entry hc-card", id: one.file, "data-state": one.state, "aria-labelledby": naming.has(one.file) ? undefined : `${one.file}-name`, "aria-label": naming.has(one.file) ? one.name : undefined },
+      head, ask, lists(one), says && sayBox(one), note));
   }
 
   const focusOn = (one, selector) => document.getElementById(one.file)?.querySelector(selector)?.focus({ preventScroll: true });
@@ -369,15 +481,15 @@
       return;
     }
     fields = new Map([...page.querySelectorAll('[data-act="name-field"]')].filter((input) => naming.has(input.closest(".hc-card")?.id) && !input.dataset.settled).map((input) => [input.closest(".hc-card").id, input]));
-    const caret = held?.act === "name-field" ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : undefined;
+    const caret = held?.act === "name-field" || held?.act === "say" ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : undefined;
     const shown = [...cards.values()].sort((a, b) => b.at - a.at || (a.file < b.file ? 1 : -1));
     const groups = ["going", "done", "cut"].map((key) => ({ key, cards: shown.filter((one) => groupOf(one) === key) })).filter((group) => group.cards.length > 0);
-    page.replaceChildren(shown.length === 0 ? h("p", { class: "board-empty" }, w().empty)
+    page.replaceChildren(shown.length === 0 ? h("p", { class: "board-empty", tabindex: "-1" }, w().empty)
       : groups.length === 1 ? h("ul", { class: "hc-list" }, groups[0].cards.map(card))
         : h("div", { class: "hc-groups", "data-n": String(groups.length) }, groups.map((group) =>
           h("section", { class: "hc-group", "data-group": group.key, "aria-labelledby": `group-${group.key}` }, h("h2", { id: `group-${group.key}` }, w().group[group.key]), h("ul", { class: "hc-list" }, group.cards.map(card))))));
-    if (held && !naming.has(held.file) && held.act !== "name-field") findHeld(held)?.focus({ preventScroll: true });
-    if (held?.act === "name-field" && naming.has(held.file)) { const input = document.getElementById(held.file)?.querySelector('[data-act="name-field"]'); input?.focus({ preventScroll: true }); if (caret !== undefined) input?.setSelectionRange(caret[0], caret[1]); }
+    if (held && !naming.has(held.file) && held.act !== "name-field" && held.act !== "say") findHeld(held)?.focus({ preventScroll: true });
+    for (const act of ["name-field", "say"]) if (held?.act === act && (act === "say" ? saying : naming).has(held.file)) { const input = document.getElementById(held.file)?.querySelector(`[data-act="${act}"]`); input?.focus({ preventScroll: true }); if (caret !== undefined) input?.setSelectionRange(caret[0], caret[1]); }
     fields = new Map();
     drawing = false;
   }
@@ -418,7 +530,7 @@
       let raw;
       try { raw = await board.read(row.file); } catch { return; }
       const one = readCard(row.file, raw);
-      if (one === undefined) { if (had !== undefined) { cards.delete(row.file); changed = true; } return; }
+      if (one === undefined || one.press === "remove") { if (had !== undefined) { cards.delete(row.file); changed = true; } return; }
       if (had !== undefined && naming.has(row.file)) one.name = had.name;
       cards.set(row.file, { ...one, modified: row.modified });
       changed = true;
