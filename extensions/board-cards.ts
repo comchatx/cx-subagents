@@ -35,6 +35,10 @@ const NAME_MAX = 200;
 const ASKED_KEPT = 64;
 /** The most of a card its two lists take, so the head stays a small part of what the board reads: about three hundred long addresses. */
 export const LISTS_MAX_BYTES = 24 * 1024;
+/** The most of a card its steps take, beside its two lists, so the card stays within what the board reads; later steps past it are left off. */
+export const STEPS_MAX_BYTES = 6 * 1024;
+/** The most characters of one step's words. */
+const STEP_MAX = 200;
 /** pi-subagents' line in a run's `events.jsonl` after which it writes no event of the helper's (`TRUNCATED_EVENT_TYPE`, at 50 MiB). */
 const TRUNCATED = "subagent.events.truncated";
 
@@ -45,6 +49,10 @@ const AT_WORK: ReadonlySet<string> = new Set(["working", "waiting", "paused"]);
 /** What the seller pressed on a card, written into it by the page: the package does it and writes the card again without it. */
 export type Press = "pause" | "resume" | "stop" | "remove";
 const PRESSES: ReadonlySet<string> = new Set(["pause", "resume", "stop", "remove"]);
+
+/** One step of a helper's list, as rpiv-todo's `todo` tool holds it: done, the one in work, or not started. */
+export type Step = { readonly words: string; readonly state: "done" | "now" | "todo" };
+const STEP_STATES: Readonly<Record<string, Step["state"]>> = { completed: "done", in_progress: "now", pending: "todo" };
 
 /** A card's facts: the front matter the page reads, the task under it. */
 export type Card = {
@@ -66,6 +74,8 @@ export type Card = {
   /** The files it wrote, by their path in cx's folder; and what it read, a page by its address and a file by its path; first first. */
   readonly files?: readonly string[];
   readonly reads?: readonly string[];
+  /** The helper's own list of steps, the latest it gave. */
+  readonly steps?: readonly Step[];
   readonly task: string;
 };
 /** A card as read back: one of the package's earlier versions (`kind: finding`) has no state and no face. */
@@ -108,6 +118,7 @@ export function cardText(card: Card): string {
   if (card.dir !== undefined) facts.push(["dir", card.dir]);
   if (card.files !== undefined && card.files.length > 0) facts.push(["files", card.files]);
   if (card.reads !== undefined && card.reads.length > 0) facts.push(["reads", card.reads]);
+  if (card.steps !== undefined && card.steps.length > 0) facts.push(["steps", card.steps]);
   const head = `---\n${facts.map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join("\n")}\n---\n\n`;
   const room = CARD_MAX_BYTES - Buffer.byteLength(head) - 1;
   const body = Buffer.byteLength(card.task) <= room ? card.task : `${Buffer.from(card.task).subarray(0, room - 3).toString().replace(/�+$/, "")}…`;
@@ -140,12 +151,14 @@ export function readCard(file: string, raw: string): ReadCard | undefined {
   const reads = list("reads");
   const run = text(facts.get("run")) ?? (/-subagent-([A-Za-z0-9_-]+)\.md$/.exec(file)?.[1] ?? "");
   const press = text(facts.get("press"));
+  const given = facts.get("steps");
+  const steps = Array.isArray(given) ? given.map(record).filter((one) => typeof one["words"] === "string" && ["done", "now", "todo"].includes(String(one["state"]))).map((one) => ({ words: one["words"] as string, state: one["state"] as Step["state"] })) : undefined;
   return {
     file, name: text(facts.get("title")) ?? "", at, run, task: match[2]!.replace(/\n$/, ""),
     ...(state === undefined ? {} : { state }), ...(typeof face === "number" && Number.isInteger(face) ? { face } : {}),
     ...(ended === undefined ? {} : { ended }), ...(typeof took === "number" ? { took } : {}), ...(dir === undefined ? {} : { dir }),
     ...(typeof ran === "number" ? { ran } : {}), ...(since === undefined ? {} : { since }),
-    ...(files === undefined ? {} : { files }), ...(reads === undefined ? {} : { reads }),
+    ...(files === undefined ? {} : { files }), ...(reads === undefined ? {} : { reads }), ...(steps === undefined ? {} : { steps }),
     ...(press !== undefined && PRESSES.has(press) ? { press: press as Press } : {}),
   };
 }
@@ -304,6 +317,28 @@ export function arrival(tool: unknown, args: unknown, tree: string): { readonly 
   return { files: [], reads: [] };
 }
 
+/**
+ * A helper's steps from a `todo` call's result: rpiv-todo puts the whole list in each result's `details`, a deleted step marked so.
+ * None where the result holds no list, as a refused call's; the first steps are kept while they fit `STEPS_MAX_BYTES`.
+ */
+export function stepsOf(result: unknown): readonly Step[] | undefined {
+  const details = record(record(result)["details"]);
+  if (details["error"] !== undefined || !Array.isArray(details["tasks"])) return undefined;
+  const steps: Step[] = [];
+  let size = 2;
+  for (const task of details["tasks"].map(record)) {
+    const state = STEP_STATES[String(task["status"])];
+    const words = firstLine(text(task["subject"]) ?? "");
+    if (state === undefined || words === "") continue;
+    const one = { words: words.length > STEP_MAX ? `${words.slice(0, STEP_MAX - 1)}…` : words, state };
+    const more = Buffer.byteLength(JSON.stringify(one)) + 1;
+    if (size + more > STEPS_MAX_BYTES) break;
+    steps.push(one);
+    size += more;
+  }
+  return steps;
+}
+
 /** A card with what arrived added at the ends of its lists, each once, while both lists stay within `LISTS_MAX_BYTES`. */
 export function withArrival(card: Card, came: { readonly files: readonly string[]; readonly reads: readonly string[] }): Card {
   const files = [...(card.files ?? [])];
@@ -440,7 +475,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const card = found(person, run);
     if (card?.state === undefined) return;
     const next = change(whole(card));
-    if (next.state !== card.state || next.files?.length !== card.files?.length || next.reads?.length !== card.reads?.length) write(person, next);
+    if (next.state !== card.state || next.files?.length !== card.files?.length || next.reads?.length !== card.reads?.length || JSON.stringify(next.steps ?? []) !== JSON.stringify(card.steps ?? [])) write(person, next);
   };
 
   /** One request to pi-subagents' control, answered by its reply. */
@@ -495,6 +530,10 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
         const call = calls.get(id)!;
         calls.delete(id);
         if (event["isError"] !== true) update(person, run, (card) => withArrival(card, arrival(call.name, call.args, cwd)));
+      }
+      if (event["type"] === "tool_execution_end" && event["toolName"] === "todo" && event["isError"] !== true) {
+        const steps = stepsOf(event["result"]);
+        if (steps !== undefined) update(person, run, (card) => ({ ...card, steps }));
       }
       if (event["type"] === "tool_execution_start" && asksCx(event["toolName"], event["args"])) {
         waits.add(id);
@@ -610,7 +649,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
       file: card?.file ?? `${stamp(ended)}${suffix(run)}`, name: card?.name || (text(event["agent"]) ?? "subagent"), face: card?.face ?? nextFace(person),
       // A run a stop cut, its card marked `off` at the start, ends here as pi-subagents' own reconciliation fails it: it stays `off`.
       state: card?.state === "off" ? "off" : endState(event), at: card?.at ?? ended, ended, took, ran: card === undefined ? took : worked(card), run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
-      ...(card?.files === undefined ? {} : { files: card.files }), ...(card?.reads === undefined ? {} : { reads: card.reads }),
+      ...(card?.files === undefined ? {} : { files: card.files }), ...(card?.reads === undefined ? {} : { reads: card.reads }), ...(card?.steps === undefined ? {} : { steps: card.steps }),
     });
   });
 }

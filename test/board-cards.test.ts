@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it } from "vitest";
-import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, LISTS_MAX_BYTES, personDir, readCard, STARTED, TAB, withArrival, type Card } from "../extensions/board-cards.js";
+import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, LISTS_MAX_BYTES, personDir, readCard, STARTED, STEPS_MAX_BYTES, stepsOf, TAB, withArrival, type Card } from "../extensions/board-cards.js";
 
 const scratches: string[] = [];
 const sessions: (() => void)[] = [];
@@ -467,4 +467,66 @@ it("loads as pi loads it: the default export takes pi's events", () => {
   const seen: string[] = [];
   boardCardsDefault({ on: (name: string) => seen.push(name), events: { on: (name: string) => seen.push(name) } } as unknown as ExtensionAPI);
   expect(seen.sort()).toEqual([COMPLETE, STARTED, "context", "session_shutdown", "session_start", "tool_call", "tool_result"].sort());
+});
+
+const todo = (tasks: unknown[], more: Record<string, unknown> = {}) => ({ content: [{ type: "text", text: "ok" }], details: { action: "update", params: {}, tasks, nextId: tasks.length + 1, ...more } });
+
+it("reads a helper's steps from rpiv-todo's whole list, in its order: done, in work, not started; a deleted or empty one left out", () => {
+  expect(stepsOf(todo([
+    { id: 1, subject: "Read the reviews", status: "completed" },
+    { id: 2, subject: "Compare prices\nby country", activeForm: "Comparing prices", status: "in_progress" },
+    { id: 3, subject: "Old idea", status: "deleted" },
+    { id: 4, subject: "  ", status: "pending" },
+    { id: 5, subject: "Write the report", status: "pending" },
+    { id: 6, subject: "x".repeat(300), status: "pending" },
+  ]))).toEqual([
+    { words: "Read the reviews", state: "done" },
+    { words: "Compare prices", state: "now" },
+    { words: "Write the report", state: "todo" },
+    { words: `${"x".repeat(199)}…`, state: "todo" },
+  ]);
+  expect(stepsOf(todo([]))).toEqual([]);
+  // A refused call, or a result with no list, changes nothing.
+  expect(stepsOf(todo([{ id: 1, subject: "a", status: "pending" }], { error: "id 9 not found" }))).toBeUndefined();
+  expect(stepsOf({ content: [] })).toBeUndefined();
+  expect(stepsOf(undefined)).toBeUndefined();
+});
+
+it("keeps the first steps while they fit their bound", () => {
+  const steps = stepsOf(todo(Array.from({ length: 100 }, (_, n) => ({ id: n + 1, subject: `step ${n} ${"y".repeat(180)}`, status: "pending" }))))!;
+  expect(steps.length).toBeGreaterThan(20);
+  expect(steps.length).toBeLessThan(100);
+  expect(steps[0]!.words.startsWith("step 0 ")).toBe(true);
+  expect(Buffer.byteLength(JSON.stringify(steps))).toBeLessThanOrEqual(STEPS_MAX_BYTES);
+});
+
+it("puts a helper's steps on its card as each `todo` call ends well, and keeps them through its file and at its end", async () => {
+  const s = session();
+  const run = runDir(s.cwd, "run-1");
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
+  const card = () => s.card("20261105-093000-subagent-run-1.md");
+  const call = (id: string, result: unknown, isError = false, toolName = "todo") => {
+    run.event({ type: "tool_execution_start", toolCallId: id, toolName, args: {} });
+    run.event({ type: "tool_execution_end", toolCallId: id, toolName, result, isError });
+  };
+  call("t1", todo([{ id: 1, subject: "Read", status: "in_progress" }, { id: 2, subject: "Write", status: "pending" }]));
+  await eventually(card, (one) => one?.steps?.length === 2);
+  expect(card()?.steps).toEqual([{ words: "Read", state: "now" }, { words: "Write", state: "todo" }]);
+  // A refused call, an error, and another tool's result leave them as they are.
+  call("t2", todo([], { error: "bad" }));
+  call("t3", todo([{ id: 1, subject: "Lost", status: "pending" }]), true);
+  call("t4", todo([{ id: 1, subject: "Other", status: "pending" }]), false, "bash");
+  // The log is read in order: once a later call's file is on the card, the three before it were read.
+  run.event({ type: "tool_execution_start", toolCallId: "w1", toolName: "write", args: { path: "out.md" } });
+  run.event({ type: "tool_execution_end", toolCallId: "w1", toolName: "write", result: {}, isError: false });
+  await eventually(card, (one) => one?.files?.length === 1);
+  expect(card()?.steps).toEqual([{ words: "Read", state: "now" }, { words: "Write", state: "todo" }]);
+  call("t5", todo([{ id: 1, subject: "Read", status: "completed" }, { id: 2, subject: "Write", status: "in_progress" }]));
+  await eventually(card, (one) => one?.steps?.[0]?.state === "done");
+  expect(card()?.steps).toEqual([{ words: "Read", state: "done" }, { words: "Write", state: "now" }]);
+  s.complete({ id: "run-1", state: "complete", success: true, durationMs: 1000 });
+  expect([card()?.state, card()?.steps]).toEqual(["done", [{ words: "Read", state: "done" }, { words: "Write", state: "now" }]]);
+  // An empty list writes no line.
+  expect(cardText({ file: "x.md", name: "x", face: 0, state: "working", at: T0, run: "x", task: "t", steps: [] })).not.toMatch(/^steps:/m);
 });

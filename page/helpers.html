@@ -71,6 +71,22 @@
   .hc-card[data-state="working"] .hc-line { color: var(--ink); }
   .hc-card[data-state="failed"] .hc-line, .hc-card[data-state="timeout"] .hc-line, .hc-card[data-state="off"] .hc-line { color: var(--bad); }
 
+  /* The steps: done with a filled tick and quiet words, the one in work with the build's ring and strong words, one not started with a dashed round. */
+  .hc-steps { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-steps > li { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; overflow-wrap: anywhere; }
+  .hc-steps > li > span:last-child { min-width: 0; }
+  .hc-step-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-small); height: 1lh; }
+  .hc-step-mark > svg { display: block; width: var(--size-small); height: var(--size-small); }
+  /* The build's ring, as the Plugins page draws it; the board hands a page its colours and not that rule. */
+  .hc-spin { display: inline-block; width: var(--size-caption); height: var(--size-caption); border: 1.5px solid var(--live-edge); border-top-color: var(--ink); border-radius: var(--radius-round); animation: hc-spin 0.8s linear infinite; }
+  @keyframes hc-spin { to { transform: rotate(1turn); } }
+  @media (prefers-reduced-motion: reduce) { .hc-spin { animation-duration: 2.4s; } }
+  .hc-steps > li[data-step="done"] { color: var(--quiet); }
+  .hc-steps > li[data-step="now"] { font-weight: var(--weight-strong); }
+  .hc-steps > li[data-step="todo"] .hc-step-mark, .hc-steps > li[data-step="held"] .hc-step-mark { color: var(--edge); }
+  .hc-steps > li[data-step="cut"] .hc-step-mark { color: var(--bad); }
+  .hc-card[data-state="stopped"] .hc-steps > li[data-step="cut"] .hc-step-mark { color: var(--edge); }
+
   /* What a helper wrote, under its head: each file the board's file box, one under another, as wide as its name. Past three the list
      stops at two and one press under it leads to the whole list, so a card never holds more than three rows of files. */
   .hc-files { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
@@ -146,6 +162,7 @@
       stopAsk: (name) => `停止“${name}”？停止后无法继续。`,
       tell: "发消息", say: (name) => `给“${name}”发消息`, sayHere: "给帮手发消息", sent: "已交给 cx",
       group: { going: "进行中", done: "已完成", cut: "未完成" },
+      step: { done: "已完成", now: "进行中", todo: "未开始", held: "已暂停", cut: "未完成" },
       empty: "cx 交给帮手的事会显示在这里。",
       page: "帮手",
       allFiles: (n) => `查看全部 ${n} 个文件`, references: (n) => `${n} 份参考资料`, createdFiles: (n) => `生成的 ${n} 个文件`,
@@ -168,6 +185,7 @@
       stopAsk: (name) => `Stop “${name}”? It can't be resumed afterwards.`,
       tell: "Message", say: (name) => `Message “${name}”`, sayHere: "Message the helper", sent: "Sent to cx",
       group: { going: "In progress", done: "Completed", cut: "Not finished" },
+      step: { done: "Done", now: "In progress", todo: "Not started", held: "Paused", cut: "Not finished" },
       empty: "What cx hands to helpers will be here.",
       page: "Helpers",
       allFiles: (n) => `Show all ${n} files`, references: (n) => (n === 1 ? "1 reference" : `${n} references`), createdFiles: (n) => (n === 1 ? "Created 1 file" : `Created ${n} files`),
@@ -221,8 +239,9 @@
     }
     const at = Date.parse(facts.at), ended = Date.parse(facts.ended), since = Date.parse(facts.since);
     if (facts.kind !== "helper" || !Number.isFinite(at)) return undefined;
+    const steps = Array.isArray(facts.steps) ? facts.steps.filter((one) => typeof one?.words === "string" && one.words !== "" && ["done", "now", "todo"].includes(one.state)) : [];
     const list = (value) => (Array.isArray(value) ? value.filter((one) => typeof one === "string" && one !== "") : []);
-    return pressedAs({ file, raw, name: String(facts.title ?? ""), face: Number.isInteger(facts.face) ? facts.face : 0, state: String(facts.state ?? "done"), at, ended: Number.isFinite(ended) ? ended : undefined, took: typeof facts.took === "number" ? facts.took : undefined, ran: typeof facts.ran === "number" ? facts.ran : 0, since: Number.isFinite(since) ? since : undefined, files: list(facts.files), reads: list(facts.reads), press: typeof facts.press === "string" ? facts.press : undefined });
+    return pressedAs({ file, raw, name: String(facts.title ?? ""), face: Number.isInteger(facts.face) ? facts.face : 0, state: String(facts.state ?? "done"), at, ended: Number.isFinite(ended) ? ended : undefined, took: typeof facts.took === "number" ? facts.took : undefined, ran: typeof facts.ran === "number" ? facts.ran : 0, since: Number.isFinite(since) ? since : undefined, files: list(facts.files), reads: list(facts.reads), steps, press: typeof facts.press === "string" ? facts.press : undefined });
   }
 
   /**
@@ -235,6 +254,26 @@
     if (one.press === "resume" && one.state === "paused") return { ...one, state: "working", since: Date.now() };
     if (one.press === "stop" && atWork(one)) return { ...one, state: "stopped", ended: Date.now(), ran, since: undefined };
     return one;
+  }
+
+  const NS = "http://www.w3.org/2000/svg";
+  const draft = (markup) => { const svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("aria-hidden", "true"); svg.innerHTML = markup; return svg; };
+  /** A step's mark: a filled tick, the build's ring, a dashed round, a round with two bars where it was paused, a round with a bar where it was cut off. */
+  function stepMark(state) {
+    if (state === "now") return h("span", { class: "hc-spin", "aria-hidden": "true" });
+    if (state === "done") return draft('<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.8 8.3l2.2 2.2 4.2-4.6" fill="none" stroke="var(--raised)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>');
+    if (state === "held") return draft('<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.4 5.6v4.8M9.6 5.6v4.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>');
+    if (state === "cut") return draft('<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.2 8h5.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>');
+    return draft('<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 2.2"/>');
+  }
+  /** A step as its card stands: the one in work held while the helper is paused or waits, and cut off once it ended, done or not, while the step was still in work. */
+  const stepAs = (card, state) => state !== "now" ? state : card.state === "paused" || card.state === "waiting" ? "held" : card.state === "working" ? "now" : "cut";
+  function stepsOf(one) {
+    if (one.steps.length === 0) return null;
+    return h("ol", { class: "hc-steps" }, one.steps.map((step) => {
+      const state = stepAs(one, step.state);
+      return h("li", { "data-step": state }, h("span", { class: "hc-step-mark" }, stepMark(state)), h("span", { dir: "auto" }, step.words, h("span", { class: "unseen" }, zh() ? `（${w().step[state]}）` : ` (${w().step[state]})`)));
+    }));
   }
 
   const page = document.getElementById("page");
@@ -460,7 +499,7 @@
         h("button", { type: "button", "data-act": "stop-yes", onclick: () => { asking.delete(one.file); saying.delete(one.file); notes.delete(one.file); pressOn(one, "stop"); focusOn(one, '[data-act="remove"]'); say(w().stopped(clock(Date.now()))); } }, w().stop)));
     const note = notes.has(one.file) && !says && h("p", { class: "hc-note" }, w().sent);
     return h("li", {}, h("article", { class: "entry hc-card", id: one.file, "data-state": one.state, "aria-labelledby": naming.has(one.file) ? undefined : `${one.file}-name`, "aria-label": naming.has(one.file) ? one.name : undefined },
-      head, ask, lists(one), says && sayBox(one), note));
+      head, ask, stepsOf(one), lists(one), says && sayBox(one), note));
   }
 
   const focusOn = (one, selector) => document.getElementById(one.file)?.querySelector(selector)?.focus({ preventScroll: true });
