@@ -560,3 +560,21 @@ it("tells cx the run of the card a seller's message was written on, read from th
     `<board from="待办" card="20261105-093000-subagent-run-old.md"></board>`,
   ]);
 });
+
+it("shows no steps on a done or failed helper continued until it lists its steps again, and keeps a paused one's", async () => {
+  for (const ended of ["done", "failed", "paused"] as const) {
+    const s = session();
+    s.start();
+    const file = "20261105-093000-subagent-run-1.md";
+    mkdirSync(s.tab, { recursive: true });
+    writeFileSync(join(s.tab, file), cardText({ file, name: "Rivals", face: 0, state: ended, at: T0, run: "run-1", task: "t", steps: [{ words: "Read", state: "done" }, { words: "Write", state: "now" }] }));
+    s.call("c2", { action: "resume", id: "run-1", message: "go on" });
+    const run = runDir(s.cwd, "run-2");
+    s.started({ id: "run-2", asyncDir: run.dir });
+    expect([ended, s.card(file)?.state, s.card(file)?.run, s.card(file)?.steps]).toEqual([ended, "working", "run-2", ended === "paused" ? [{ words: "Read", state: "done" }, { words: "Write", state: "now" }] : undefined]);
+    run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "todo", args: {} });
+    run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "todo", result: todo([{ id: 1, subject: "Add Japan", status: "in_progress" }]), isError: false });
+    expect(await eventually(() => s.card(file)?.steps, (steps) => steps?.length === 1)).toEqual([{ words: "Add Japan", state: "now" }]);
+    s.result("c2");
+  }
+});

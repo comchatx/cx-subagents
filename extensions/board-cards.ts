@@ -621,8 +621,9 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     // A run continued from another starts with no call of its own; while one resume alone is asked, the run is that one's, on its card.
     const continued = toolCallId === undefined && resuming.size === 1 ? found(person, [...resuming.values()][0]!.from) : undefined;
     if (continued !== undefined) {
-      const { ended: _ended, took: _took, ...card } = whole(continued);
-      write(person, { ...card, state: "working", ran: card.ran ?? 0, since: at, run, ...(dir === undefined ? {} : { dir }) });
+      // A paused helper goes on with its steps; one that ended shows none until it lists its steps again, as the signed sheet draws it.
+      const { ended: _ended, took: _took, steps, ...card } = whole(continued);
+      write(person, { ...card, state: "working", ran: card.ran ?? 0, since: at, run, ...(dir === undefined ? {} : { dir }), ...(continued.state === "paused" && steps !== undefined ? { steps } : {}) });
       if (dir !== undefined) follow(person, run, dir);
       return;
     }

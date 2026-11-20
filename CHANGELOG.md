@@ -3,7 +3,7 @@
 ## 0.7.0
 
 - A helper lists its own steps with rpiv-todo's `todo` tool (`@juicesharp/rpiv-todo` 2.15.0, now a dependency), loaded in a helper alone by `subagentOnlyExtensions` in `agents/helper.md`; cx has no such tool.
-- The card carries the helper's latest list as `steps`, read from each `todo` call that ends well in the run's `events.jsonl`, within 6 KiB, and keeps it at the end.
+- The card carries the helper's latest list as `steps`, read from each `todo` call that ends well in the run's `events.jsonl`, within 6 KiB, and keeps it at the end. A done or failed helper that is continued shows no steps until it lists them again; a paused one keeps its list.
 - The page draws the steps under the card's head as the signed sheet does: done, in progress, not started; a step in progress shows paused while the helper is paused or waits, and not finished once the card ended.
 
 ## 0.6.0
