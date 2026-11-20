@@ -298,6 +298,9 @@
    * Writes the seller's press into the card's file, read again first, for the package to do; the card is drawn as the press leaves it at
    * once. Where the board does not take the write, the card is read again and drawn as its file stands.
    */
+  /** A card's file with the press in its head, in place of any it held: the task under the head is left as it is. */
+  const withPress = (raw, press) => raw.replace(/^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)/, (_, open, head, close) =>
+    `${open}${head.split(/\r?\n/).filter((line) => !line.startsWith("press: ")).join("\n")}\npress: ${JSON.stringify(press)}${close}`);
   async function pressOn(one, press) {
     const was = cards.get(one.file);
     if (press === "remove") cards.delete(one.file);
@@ -305,7 +308,7 @@
     draw();
     try {
       const raw = await board.read(one.file);
-      await board.write(one.file, raw.replace(/^press: .*\n/m, "").replace(/\n---\n/, `\npress: ${JSON.stringify(press)}\n---\n`));
+      await board.write(one.file, withPress(raw, press));
     } catch {
       const now = cards.get(one.file);
       if (now !== undefined) now.modified = undefined;
@@ -321,13 +324,14 @@
       box = board.box({ placeholder: w().sayHere, send: async (words) => {
         const text = words.trim();
         if (text === "") return;
-        await board.send(toCx(cards.get(one.file)?.name ?? one.name, text), { card: one.file });
+        // Where the board could not send now it puts the words in the chat's box instead (`drafted`): the card then says nothing went.
+        const answer = await board.send(toCx(cards.get(one.file)?.name ?? one.name, text), { card: one.file });
         saying.delete(one.file);
-        notes.add(one.file);
+        if (answer === "sent") notes.add(one.file);
         boxes.delete(one.file);
         draw();
         focusOn(one, '[data-act="tell"]');
-        say(w().sent);
+        if (answer === "sent") say(w().sent);
       } });
       box.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); saying.delete(one.file); draw(); focusOn(one, '[data-act="tell"]'); } });
       boxes.set(one.file, box);
