@@ -39,7 +39,7 @@ function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
     // The board's two answers: sent, or put in the chat's box where it could not send now.
     send: async (text: string, options?: { card?: string }) => { asked.push(`send ${options?.card} ${text}`); return refuse.send ? "drafted" : "sent"; },
     // The chat's message box as the board hands it: a field and its control; Enter sends the field's words, emptied once they went.
-    box: ({ placeholder, send }: { placeholder: string; send: (text: string) => Promise<unknown> }) => {
+    box: ({ placeholder, send, control }: { placeholder: string; send: (text: string) => Promise<unknown>; control?: { name: string } }) => {
       const box = window.document.createElement("div");
       box.className = "cx-box";
       const field = window.document.createElement("textarea");
@@ -51,7 +51,11 @@ function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
         const words = field.value;
         void send(words).then(() => { if (field.value === words) field.value = ""; }, () => {});
       });
-      box.append(field, window.document.createElement("button"));
+      // The control takes the name the page gives it, else the chat's Send word, as the board's own box does.
+      const button = window.document.createElement("button");
+      button.setAttribute("aria-label", control?.name ?? "Send");
+      button.setAttribute("title", control?.name ?? "Send");
+      box.append(field, button);
       return box;
     },
   };
@@ -494,4 +498,14 @@ it("says nothing went where the board put the words in the chat's box instead of
   await new Promise((done) => setTimeout(done, 80));
   expect(p.asked.filter((one) => one.startsWith("send"))).toEqual(["send a-subagent-1.md **@竞品对比** 加上德国站"]);
   expect([p.document.querySelector(".cx-box"), p.document.querySelector(".hc-note"), focused(p), p.document.getElementById("said")?.textContent]).toEqual([null, null, "tell", ""]);
+});
+
+it("names its box's control for where the words go, 交给 cx or Send to cx, in the board's language", async () => {
+  for (const [locale, name] of [["zh", "交给 cx"], ["en", "Send to cx"]] as const) {
+    const p = page([card("a-subagent-1.md", { name: "竞品对比", state: "working" })], locale);
+    await settle();
+    (p.document.querySelector('[data-act="tell"]') as unknown as Press).click();
+    const control = p.document.querySelector(".hc-card .cx-box button");
+    expect([control?.getAttribute("aria-label"), control?.getAttribute("title")]).toEqual([name, name]);
+  }
 });
