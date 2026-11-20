@@ -144,7 +144,7 @@
       rename: "重命名", name: "名称",
       pause: "暂停", resume: "继续", stop: "停止", remove: "移除", cancel: "取消",
       stopAsk: (name) => `停止“${name}”？停止后无法继续。`,
-      tell: "发消息", say: (name) => `给“${name}”发消息`, sayHere: "给帮手发消息", sent: "已交给 cx",
+      tell: "发消息", say: (name) => `给“${name}”发消息`, sayHere: "给帮手发消息", sent: "已交给 cx", give: "交给 cx",
       group: { going: "进行中", done: "已完成", cut: "未完成" },
       empty: "cx 交给帮手的事会显示在这里。",
       page: "帮手",
@@ -166,7 +166,7 @@
       rename: "Rename", name: "Name",
       pause: "Pause", resume: "Resume", stop: "Stop", remove: "Remove", cancel: "Cancel",
       stopAsk: (name) => `Stop “${name}”? It can't be resumed afterwards.`,
-      tell: "Message", say: (name) => `Message “${name}”`, sayHere: "Message the helper", sent: "Sent to cx",
+      tell: "Message", say: (name) => `Message “${name}”`, sayHere: "Message the helper", sent: "Sent to cx", give: "Send to cx",
       group: { going: "In progress", done: "Completed", cut: "Not finished" },
       empty: "What cx hands to helpers will be here.",
       page: "Helpers",
@@ -319,22 +319,24 @@
 
   /** The message box for one card, the board's own: Enter sends, Escape closes it and keeps what was written. */
   function sayBox(one) {
-    let box = boxes.get(one.file);
+    // A box is the card's in one language: its control is named in that language, and its words wait there if the language changes.
+    const key = `${one.file}\n${zh() ? "zh" : "en"}`;
+    let box = boxes.get(key);
     if (box === undefined) {
-      box = board.box({ placeholder: w().sayHere, send: async (words) => {
+      box = board.box({ placeholder: w().sayHere, control: { name: w().give }, send: async (words) => {
         const text = words.trim();
         if (text === "") return;
         // Where the board could not send now it puts the words in the chat's box instead (`drafted`): the card then says nothing went.
         const answer = await board.send(toCx(cards.get(one.file)?.name ?? one.name, text), { card: one.file });
         saying.delete(one.file);
         if (answer === "sent") notes.add(one.file);
-        boxes.delete(one.file);
+        boxes.delete(key);
         draw();
         focusOn(one, '[data-act="tell"]');
         if (answer === "sent") say(w().sent);
       } });
       box.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); saying.delete(one.file); draw(); focusOn(one, '[data-act="tell"]'); } });
-      boxes.set(one.file, box);
+      boxes.set(key, box);
     }
     const field = box.querySelector("textarea, input");
     field?.setAttribute("aria-label", w().say(one.name));

@@ -3,7 +3,7 @@
 ## 0.6.0
 
 - A card offers the presses its state allows: 暂停 / Pause on a working card, 继续 / Resume on a paused one, 停止 / Stop on any at work, asked once first, and 移除 / Remove on one no longer at work. The page writes the press into the card's head; the package does it through pi-subagents' own control (`interrupt`, `resume`, `stop`) and writes the card again as the run stands, and a remove deletes the card's file. A press that does not fit, or that pi-subagents refuses, is taken out.
-- 给帮手发消息 / Message on a card opens the board's own message box; the words go to cx in the chat as `**@name** words` with the card, and where the board sent them the card says 已交给 cx / Sent to cx. cx passes them on to the helper, and continues an ended helper with `resume` rather than starting a new one; a resumed helper keeps its card.
+- 给帮手发消息 / Message on a card opens the board's own message box, its control named 交给 cx / Send to cx; the words go to cx in the chat as `**@name** words` with the card, and where the board sent them the card says 已交给 cx / Sent to cx. cx passes them on to the helper, and continues an ended helper with `resume` rather than starting a new one; a resumed helper keeps its card.
 - cx reads which card a helper's question comes from, and the run of the card a seller's message was written on, by the board's own mark on the message.
 - `comchatx.env` asks the computer to keep pi-subagents' runs in `{data}/pi-subagents`, on its disk across a stop; a run a stop cut is marked `off` by its folder and its boot.
 
