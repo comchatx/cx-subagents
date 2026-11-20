@@ -39,7 +39,7 @@ function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
     // The board's two answers: sent, or put in the chat's box where it could not send now.
     send: async (text: string, options?: { card?: string }) => { asked.push(`send ${options?.card} ${text}`); return refuse.send ? "drafted" : "sent"; },
     // The chat's message box as the board hands it: a field and its control; Enter sends the field's words, emptied once they went.
-    box: ({ placeholder, send, control }: { placeholder: string; send: (text: string) => Promise<unknown>; control?: { name: string } }) => {
+    box: ({ placeholder, send, control }: { placeholder: string; send: (text: string) => Promise<unknown>; control?: { name?: unknown } }) => {
       const box = window.document.createElement("div");
       box.className = "cx-box";
       const field = window.document.createElement("textarea");
@@ -51,10 +51,12 @@ function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
         const words = field.value;
         void send(words).then(() => { if (field.value === words) field.value = ""; }, () => {});
       });
-      // The control takes the name the page gives it, else the chat's Send word, as the board's own box does.
+      // The control takes the name the page gives it in both languages, drawn in the board's language at each change, else the chat's Send.
       const button = window.document.createElement("button");
-      button.setAttribute("aria-label", control?.name ?? "Send");
-      button.setAttribute("title", control?.name ?? "Send");
+      const name = control?.name as { zh?: unknown; en?: unknown } | undefined;
+      const named = () => { const each = name?.[window.document.documentElement.dataset["locale"] === "en" ? "en" : "zh"]; const now = typeof each === "string" && typeof name?.zh === "string" && typeof name?.en === "string" ? each : "Send"; button.setAttribute("aria-label", now); button.setAttribute("title", now); };
+      named();
+      heard.set("context", [named, ...(heard.get("context") ?? [])]);
       box.append(field, button);
       return box;
     },
@@ -459,4 +461,24 @@ it("names its box's control for where the words go, 交给 cx or Send to cx, in 
     const control = p.document.querySelector(".hc-card .cx-box button");
     expect([control?.getAttribute("aria-label"), control?.getAttribute("title")]).toEqual([name, name]);
   }
+});
+
+it("keeps the words typed in a card's box when the board's language changes, the box the same and its control named in the new language, and brings back no sent words", async () => {
+  const p = page([card("a-subagent-1.md", { name: "竞品对比", state: "working" })]);
+  await settle();
+  const tell = () => p.document.querySelector('[data-act="tell"]') as unknown as Press;
+  const open = () => { const box = p.document.querySelector(".hc-card .cx-box"); if (box === null) { tell().click(); return p.document.querySelector(".hc-card .cx-box")!; } return box; };
+  const seen = (box: NonNullable<ReturnType<Window["document"]["querySelector"]>>) => [box.querySelector("textarea")?.getAttribute("placeholder"), box.querySelector("button")?.getAttribute("aria-label"), (box.querySelector("textarea") as unknown as Field).value];
+  const first = open();
+  (first.querySelector("textarea") as unknown as Field).value = "加上德国站";
+  p.document.documentElement.dataset["locale"] = "en";
+  await p.hear("context");
+  const after = open();
+  expect([after === first, seen(after)]).toEqual([true, ["Message the helper", "Send to cx", "加上德国站"]]);
+  after.querySelector("textarea")!.dispatchEvent(new p.window.KeyboardEvent("keydown", { key: "Enter" }));
+  await settle();
+  expect(p.asked.filter((one) => one.startsWith("send"))).toEqual(["send a-subagent-1.md **@竞品对比** 加上德国站"]);
+  p.document.documentElement.dataset["locale"] = "zh";
+  await p.hear("context");
+  expect(seen(open())).toEqual(["给帮手发消息", "交给 cx", ""]);
 });
