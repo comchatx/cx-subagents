@@ -29,14 +29,15 @@ function page(files: Card[], locale: "zh" | "en" = "zh", figure = true) {
   const store = new Map(files.map((one, n) => [one.file, { text: cardText(one), modified: 1000 + n }]));
   const heard = new Map<string, (() => void)[]>();
   const asked: string[] = [];
-  const refuse = { write: false };
+  const refuse = { write: false, send: false };
   const cxBoard = {
     context: { locale },
     on: (name: string, listener: () => void) => { heard.set(name, [...(heard.get(name) ?? []), listener]); },
     list: async () => { asked.push("list"); return [...store].map(([file, one]) => ({ file, modified: one.modified, size: one.text.length })); },
     read: async (file: string) => { asked.push(`read ${file}`); const one = store.get(file); if (one === undefined) throw new Error("missing"); return one.text; },
     write: async (file: string, text: string) => { asked.push(`write ${file}`); if (refuse.write) throw new Error("box_not_running"); const one = { text, modified: (store.get(file)?.modified ?? 0) + 1 }; store.set(file, one); return { file, modified: one.modified, size: text.length }; },
-    send: async (text: string, options?: { card?: string }) => { asked.push(`send ${options?.card} ${text}`); },
+    // The board's two answers: sent, or put in the chat's box where it could not send now.
+    send: async (text: string, options?: { card?: string }) => { asked.push(`send ${options?.card} ${text}`); return refuse.send ? "drafted" : "sent"; },
     // The chat's message box as the board hands it: a field and its control; Enter sends the field's words, emptied once they went.
     box: ({ placeholder, send }: { placeholder: string; send: (text: string) => Promise<unknown> }) => {
       const box = window.document.createElement("div");
@@ -468,4 +469,29 @@ it("draws only the steps its file holds as steps: an entry with no words or a st
   p.store.set("a-subagent-1.md", { text, modified: 99 });
   await p.hear("files");
   expect(stepsOn(p.document, "a-subagent-1.md")).toEqual([["todo", "留下（未开始）", "svg"]]);
+});
+
+it("writes a press into the card's head alone: a line of the task that begins `press: ` stays", async () => {
+  const p = page([card("a-subagent-1.md", { name: "竞品对比", state: "working", task: "check prices\npress: the hardest point first" })]);
+  await settle();
+  (p.document.querySelector('[data-act="pause"]') as unknown as Press).click();
+  await settle();
+  const text = p.store.get("a-subagent-1.md")!.text;
+  expect(text.match(/^press: .*$/gm)).toEqual(['press: "pause"', "press: the hardest point first"]);
+  expect(text.endsWith("check prices\npress: the hardest point first\n")).toBe(true);
+  expect(text.indexOf('press: "pause"')).toBeLessThan(text.indexOf("\n---\n"));
+});
+
+it("says nothing went where the board put the words in the chat's box instead of sending them", async () => {
+  const p = page([card("a-subagent-1.md", { name: "竞品对比", state: "working" })]);
+  await settle();
+  p.refuse.send = true;
+  (p.document.querySelector('[data-act="tell"]') as unknown as Press).click();
+  const field = p.document.querySelector(".hc-card .cx-box textarea") as unknown as Field;
+  field.value = "加上德国站";
+  field.dispatchEvent(new p.window.KeyboardEvent("keydown", { key: "Enter" }));
+  await settle();
+  await new Promise((done) => setTimeout(done, 80));
+  expect(p.asked.filter((one) => one.startsWith("send"))).toEqual(["send a-subagent-1.md **@竞品对比** 加上德国站"]);
+  expect([p.document.querySelector(".cx-box"), p.document.querySelector(".hc-note"), focused(p), p.document.getElementById("said")?.textContent]).toEqual([null, null, "tell", ""]);
 });

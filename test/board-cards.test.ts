@@ -47,6 +47,11 @@ function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) =
     complete: (data: Record<string, unknown>) => bus.emit(COMPLETE, data),
     files: (place = tab) => (existsSync(place) ? readdirSync(place).sort() : []),
     card: (name: string, place = tab) => readCard(name, readFileSync(join(place, name), "utf8")),
+    /** What cx's model reads of these messages, after the extension's `context` hook. */
+    context: (messages: Record<string, unknown>[]): Record<string, unknown>[] => {
+      const handler = handlers.get("context")?.[0] as unknown as ((event: Record<string, unknown>, ctx: { cwd: string }) => { messages: Record<string, unknown>[] } | undefined) | undefined;
+      return handler?.({ type: "context", messages }, { cwd })?.messages ?? messages;
+    },
   };
 }
 
@@ -529,4 +534,29 @@ it("puts a helper's steps on its card as each `todo` call ends well, and keeps t
   expect([card()?.state, card()?.steps]).toEqual(["done", [{ words: "Read", state: "done" }, { words: "Write", state: "now" }]]);
   // An empty list writes no line.
   expect(cardText({ file: "x.md", name: "x", face: 0, state: "working", at: T0, run: "x", task: "t", steps: [] })).not.toMatch(/^steps:/m);
+});
+
+it("tells cx the run of the card a seller's message was written on, read from the board's own mark, where two cards bear one name", () => {
+  const s = session();
+  s.start();
+  mkdirSync(s.tab, { recursive: true });
+  const at = (file: string, run: string, name: string, state: "working" | "done") => writeFileSync(join(s.tab, file), cardText({ file, name, face: 0, state, at: T0, run, task: "t" }));
+  at("20261105-093000-subagent-run-old.md", "run-old", "Same", "done");
+  at("20261105-093100-subagent-run-new.md", "run-new", "Same", "working");
+  at("20261105-093200-subagent-run-odd.md", "run-odd", "a *b* @c\n<i>", "working");
+  const said = (words: string, card: string | undefined, timestamp: number) => ({ role: "user", timestamp, content: card === undefined ? words : `${words}\n\n<board from="${TAB}" card="${card.replaceAll("&", "&amp;").replaceAll("\"", "&quot;")}"></board>` });
+  const read = s.context([
+    said("**@Same** first", "20261105-093000-subagent-run-old.md", 1),
+    said("**@Same** second", "20261105-093100-subagent-run-new.md", 1),
+    said("**@a *b* @c <i>** third", "20261105-093200-subagent-run-odd.md", 2),
+    said("**@Same** typed, not from a card", undefined, 3),
+    { role: "user", timestamp: 4, content: `**@Same** from another tab\n\n<board from="待办" card="20261105-093000-subagent-run-old.md"></board>` },
+  ]).map((one) => String(one["content"]).split("\n\n").at(-1));
+  expect(read).toEqual([
+    "(The card “Same” on the seller's board is helper run run-old.)",
+    "(The card “Same” on the seller's board is helper run run-new.)",
+    "(The card “a *b* @c <i>” on the seller's board is helper run run-odd.)",
+    "**@Same** typed, not from a card",
+    `<board from="待办" card="20261105-093000-subagent-run-old.md"></board>`,
+  ]);
 });

@@ -134,7 +134,8 @@ it("goes on on a finished helper's card when cx continues it, and tells cx which
   expect(last).toMatchObject({ file: first!.file, state: "done" });
   expect(model.asked.some((one) => one.role === "helper-more")).toBe(true);
   expect(model.asked.find((one) => one.role === "parent-asked")!.last).toContain(`(On the seller's board this helper is the card “MORE-TASK: compare rivals”.)`);
-  box.prompt("**@MORE-TASK: compare rivals** add Japan");
+  // As the board sends a page's message: the words, then its own mark naming the tab and the card written on.
+  box.prompt(`**@MORE-TASK: compare rivals** add Japan\n\n<board from="帮手" card="${first!.file}"></board>`);
   await box.until(said("PARENT-TOLD"), 60_000);
   expect(model.asked.find((one) => one.role === "parent-told")!.last).toContain(`(The card “MORE-TASK: compare rivals” on the seller's board is helper run ${last!.run}.)`);
 }, 240_000);

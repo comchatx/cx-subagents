@@ -439,8 +439,18 @@ const withLine = <T extends Record<string, unknown>>(message: T, line: string): 
   const content = message["content"];
   return { ...message, content: typeof content === "string" ? `${content}\n\n${line}` : [...(Array.isArray(content) ? content : []), { type: "text", text: `\n\n${line}` }] };
 };
-/** A message the seller sent a helper from its card, `**@name** words`: the name. */
-const ADDRESSED = /^\*\*@([^*\n]+)\*\*/;
+/**
+ * The card a seller's message was written on: the board ends a page's message with its own mark, the tab it came from and the card,
+ * each written with `&` and `"` as entities. The name in the words is for the seller and cx to read, and two cards may bear one.
+ */
+const FROM_BOARD = /\n\n<board from="([^"\n]*)"(?: card="([^"\n]*)")?><\/board>\s*$/;
+const unnamed = (file: string): string => file.replaceAll("&quot;", "\"").replaceAll("&amp;", "&");
+const cardOfMessage = (content: unknown): string | undefined => {
+  const from = FROM_BOARD.exec(wordsOf(content));
+  return from === null || unnamed(from[1]!) !== TAB || from[2] === undefined ? undefined : unnamed(from[2]);
+};
+/** A card's name as one line of what cx reads. */
+const oneLine = (name: string): string => name.replace(/\s+/g, " ").trim();
 
 /**
  * Each background run of pi-subagents is a card in the package's tab on the asker's board: at its start, at work, its task's first line
@@ -582,18 +592,16 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     let changed = false;
     const messages = event.messages.map((message) => {
       const one = message as unknown as Record<string, unknown>;
-      const key = `${String(one["role"])}:${String(one["timestamp"])}`;
+      // A line is kept by the message and what it is about, the run that asks or the card written on, so no other message takes it.
+      const run = one["role"] === "custom" && one["customType"] === QUESTION ? text(record(one["details"])["runId"]) : undefined;
+      const file = one["role"] === "user" ? cardOfMessage(one["content"]) : undefined;
+      if (run === undefined && file === undefined) return message;
+      const key = `${String(one["timestamp"])}:${run === undefined ? `card ${file}` : `run ${run}`}`;
       let line = added.get(key);
       if (line === undefined) {
-        if (one["role"] === "custom" && one["customType"] === QUESTION) {
-          const card = found(person, text(record(one["details"])["runId"]) ?? "");
-          if (card !== undefined && card.name !== "") line = `(On the seller's board this helper is the card “${card.name}”.)`;
-        } else if (one["role"] === "user") {
-          const name = ADDRESSED.exec(wordsOf(one["content"]).trimStart())?.[1]?.trim();
-          const card = name === undefined ? undefined : cardsIn(person).filter((each) => each.name === name).sort((a, b) => Number(b.state !== undefined && AT_WORK.has(b.state)) - Number(a.state !== undefined && AT_WORK.has(a.state)) || b.at - a.at)[0];
-          if (card !== undefined) line = `(The card “${card.name}” on the seller's board is helper run ${card.run}.)`;
-        }
-        if (line === undefined) return message;
+        const card = run !== undefined ? found(person, run) : cardsIn(person).find((each) => each.file === file);
+        if (card === undefined || oneLine(card.name) === "") return message;
+        line = run !== undefined ? `(On the seller's board this helper is the card “${oneLine(card.name)}”.)` : `(The card “${oneLine(card.name)}” on the seller's board is helper run ${card.run}.)`;
         added.set(key, line);
       }
       changed = true;
