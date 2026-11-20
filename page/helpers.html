@@ -358,27 +358,27 @@
 
   /** The message box for one card, the board's own: Enter sends, Escape closes it and keeps what was written. */
   function sayBox(one) {
-    // A box is the card's in one language: its control is named in that language, and its words wait there if the language changes.
-    const key = `${one.file}\n${zh() ? "zh" : "en"}`;
-    let box = boxes.get(key);
+    // One box a card: the board names its control in the board's language at each change of language, and the words stay in it.
+    let box = boxes.get(one.file);
     if (box === undefined) {
-      box = board.box({ placeholder: w().sayHere, control: { name: w().give }, send: async (words) => {
+      box = board.box({ placeholder: w().sayHere, control: { name: { zh: WORDS.zh.give, en: WORDS.en.give } }, send: async (words) => {
         const text = words.trim();
         if (text === "") return;
         // Where the board could not send now it puts the words in the chat's box instead (`drafted`): the card then says nothing went.
         const answer = await board.send(toCx(cards.get(one.file)?.name ?? one.name, text), { card: one.file });
         saying.delete(one.file);
         if (answer === "sent") notes.add(one.file);
-        boxes.delete(key);
+        boxes.delete(one.file);
         draw();
         focusOn(one, '[data-act="tell"]');
         if (answer === "sent") say(w().sent);
       } });
       box.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); saying.delete(one.file); draw(); focusOn(one, '[data-act="tell"]'); } });
-      boxes.set(key, box);
+      boxes.set(one.file, box);
     }
     const field = box.querySelector("textarea, input");
     field?.setAttribute("aria-label", w().say(one.name));
+    field?.setAttribute("placeholder", w().sayHere);
     field?.setAttribute("data-act", "say");
     return box;
   }
