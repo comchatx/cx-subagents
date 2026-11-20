@@ -1,6 +1,6 @@
 {
   "name": "@comchatx/cx-subagents",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Lets cx hand off long jobs, with results on the board.",
   "license": "MIT",
   "author": "ComChatX",
