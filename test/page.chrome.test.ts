@@ -103,14 +103,14 @@ it.skipIf(at === undefined)("keeps a name being typed through another card's fil
     await settle();
     expect(await seen()).toEqual({ focus: "c-subagent-3.md name", field: null, names: ["Price check", "Review summary", "Rival comparison"], writes: [] });
 
-    // Tab out of a name keeps it, as the signed page does, and the keyboard goes on to the next name.
+    // Tab out of a name keeps it, as the signed page does, and the keyboard goes on to the card's next control, its message press.
     await pressName("c-subagent-3.md");
     await type("Tabbed");
     await browser.key("Tab");
     await settle();
     const tabbed = await seen();
     expect([tabbed.focus, tabbed.field, tabbed.names, tabbed.writes.map((one) => [one.file, title(one.text)])]).toEqual([
-      "b-subagent-2.md name", null, ["Tabbed", "Review summary", "Rival comparison"], [["c-subagent-3.md", '"Tabbed"']],
+      "c-subagent-3.md tell", null, ["Tabbed", "Review summary", "Rival comparison"], [["c-subagent-3.md", '"Tabbed"']],
     ]);
 
     // A press on another name keeps the one being typed and opens the one pressed.

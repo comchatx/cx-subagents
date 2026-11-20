@@ -20,7 +20,7 @@ const T0 = Date.UTC(2026, 10, 5, 9, 30, 0);
  * The extension on a bus of its own, as pi hands it one: pi's events by name, and the session's bus pi-subagents emits on. `facts` is
  * what the computer hands the person's pi (`CX_PERSON_FACTS`), with `BOARD` standing for the board's directory under the session's.
  */
-function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) => string) {
+function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) => string, boot?: string) {
   const cwd = mkdtempSync(join(tmpdir(), "cx-subagents-cards-"));
   scratches.push(cwd);
   for (const person of people) mkdirSync(join(cwd, "board", person), { recursive: true });
@@ -33,7 +33,7 @@ function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) =
   } as unknown as ExtensionAPI;
   const before = process.env["CX_PERSON_FACTS"];
   if (facts === undefined) delete process.env["CX_PERSON_FACTS"]; else process.env["CX_PERSON_FACTS"] = facts(cwd);
-  boardCards(pi, { now: () => clock.at });
+  boardCards(pi, { now: () => clock.at, boot: () => boot });
   const fire = (name: string, event: Record<string, unknown>) => { for (const handler of handlers.get(name) ?? []) handler(event, { cwd }); };
   sessions.push(() => { fire("session_shutdown", { type: "session_shutdown" }); if (before === undefined) delete process.env["CX_PERSON_FACTS"]; else process.env["CX_PERSON_FACTS"] = before; });
   const person = join(cwd, "board", people[0] ?? "none");
@@ -47,6 +47,11 @@ function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) =
     complete: (data: Record<string, unknown>) => bus.emit(COMPLETE, data),
     files: (place = tab) => (existsSync(place) ? readdirSync(place).sort() : []),
     card: (name: string, place = tab) => readCard(name, readFileSync(join(place, name), "utf8")),
+    /** What cx's model reads of these messages, after the extension's `context` hook. */
+    context: (messages: Record<string, unknown>[]): Record<string, unknown>[] => {
+      const handler = handlers.get("context")?.[0] as unknown as ((event: Record<string, unknown>, ctx: { cwd: string }) => { messages: Record<string, unknown>[] } | undefined) | undefined;
+      return handler?.({ type: "context", messages }, { cwd })?.messages ?? messages;
+    },
   };
 }
 
@@ -56,7 +61,11 @@ function runDir(cwd: string, run: string) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "status.json"), JSON.stringify({ runId: run, state: "running" }));
   writeFileSync(join(dir, "events.jsonl"), "");
-  return { dir, event: (line: Record<string, unknown>) => appendFileSync(join(dir, "events.jsonl"), `${JSON.stringify(line)}\n`) };
+  const log = join(dir, "events.jsonl");
+  // macOS's file events can drop a change made just after a watch begins, which inotify on cx's computer does not: the log is touched
+  // again a moment later, so the follower hears the line either way.
+  const event = (line: Record<string, unknown>) => { appendFileSync(log, `${JSON.stringify(line)}\n`); setTimeout(() => { try { const now = new Date(); utimesSync(log, now, now); } catch { /* gone with its test */ } }, 100); };
+  return { dir, event };
 }
 
 async function eventually<T>(read: () => T, test: (value: T) => boolean, boundMs = 5_000): Promise<T> {
@@ -300,6 +309,30 @@ it("counts a pause as a wait: the stretch at work added, nothing taken from the 
   expect([before, after.state, after.ran, after.since, after.took, worked(T0 + 700_000)]).toEqual([120, "paused", 120, undefined, 630, 120]);
 });
 
+it("marks off a card at work whose run's folder outlived the stop on the disk, its status still at work under another boot, and keeps it off at the end pi-subagents then gives it", () => {
+  const s = session(["acct_1"], undefined, "boot-now");
+  const status = (run: string, state: string, bootId?: string) => {
+    const dir = join(s.cwd, "runs", run);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "status.json"), JSON.stringify({ runId: run, state, ...(bootId === undefined ? {} : { bootId }) }));
+    return dir;
+  };
+  const cases = [["cut", "running", "boot-before"], ["queued", "queued", "boot-before"], ["here", "running", "boot-now"], ["unknown", "running", undefined], ["ended-unheard", "complete", "boot-before"]] as const;
+  for (const [n, [name, state, bootId]] of cases.entries()) {
+    s.call(`c${n}`, { task: name });
+    s.started({ id: `run-${name}`, toolCallId: `c${n}`, asyncDir: status(`run-${name}`, state, bootId) });
+    s.result(`c${n}`);
+    s.clock.at += 1000;
+  }
+  s.start();
+  const states = () => s.files().map((name) => [s.card(name)?.name, s.card(name)?.state]);
+  expect(states()).toEqual([["cut", "off"], ["queued", "off"], ["here", "working"], ["unknown", "working"], ["ended-unheard", "working"]]);
+  // pi-subagents reconciles the cut run as failed, and that end reaches the package.
+  s.complete({ id: "run-cut", state: "failed", success: false, durationMs: 10 });
+  s.complete({ id: "run-ended-unheard", state: "complete", success: true, durationMs: 10 });
+  expect(states()).toEqual([["cut", "off"], ["queued", "off"], ["here", "working"], ["unknown", "working"], ["ended-unheard", "done"]]);
+});
+
 it("marks off, when a session starts, a card at work whose run's folder went with cx's computer, and only that one", () => {
   const s = session();
   const kept = runDir(s.cwd, "run-kept");
@@ -438,5 +471,30 @@ it("keeps a card's lists through its file and within their bound, the earliest k
 it("loads as pi loads it: the default export takes pi's events", () => {
   const seen: string[] = [];
   boardCardsDefault({ on: (name: string) => seen.push(name), events: { on: (name: string) => seen.push(name) } } as unknown as ExtensionAPI);
-  expect(seen.sort()).toEqual([COMPLETE, STARTED, "session_shutdown", "session_start", "tool_call", "tool_result"].sort());
+  expect(seen.sort()).toEqual([COMPLETE, STARTED, "context", "session_shutdown", "session_start", "tool_call", "tool_result"].sort());
+});
+
+it("tells cx the run of the card a seller's message was written on, read from the board's own mark, where two cards bear one name", () => {
+  const s = session();
+  s.start();
+  mkdirSync(s.tab, { recursive: true });
+  const at = (file: string, run: string, name: string, state: "working" | "done") => writeFileSync(join(s.tab, file), cardText({ file, name, face: 0, state, at: T0, run, task: "t" }));
+  at("20261105-093000-subagent-run-old.md", "run-old", "Same", "done");
+  at("20261105-093100-subagent-run-new.md", "run-new", "Same", "working");
+  at("20261105-093200-subagent-run-odd.md", "run-odd", "a *b* @c\n<i>", "working");
+  const said = (words: string, card: string | undefined, timestamp: number) => ({ role: "user", timestamp, content: card === undefined ? words : `${words}\n\n<board from="${TAB}" card="${card.replaceAll("&", "&amp;").replaceAll("\"", "&quot;")}"></board>` });
+  const read = s.context([
+    said("**@Same** first", "20261105-093000-subagent-run-old.md", 1),
+    said("**@Same** second", "20261105-093100-subagent-run-new.md", 1),
+    said("**@a *b* @c <i>** third", "20261105-093200-subagent-run-odd.md", 2),
+    said("**@Same** typed, not from a card", undefined, 3),
+    { role: "user", timestamp: 4, content: `**@Same** from another tab\n\n<board from="待办" card="20261105-093000-subagent-run-old.md"></board>` },
+  ]).map((one) => String(one["content"]).split("\n\n").at(-1));
+  expect(read).toEqual([
+    "(The card “Same” on the seller's board is helper run run-old.)",
+    "(The card “Same” on the seller's board is helper run run-new.)",
+    "(The card “a *b* @c <i>” on the seller's board is helper run run-odd.)",
+    "**@Same** typed, not from a card",
+    `<board from="待办" card="20261105-093000-subagent-run-old.md"></board>`,
+  ]);
 });
