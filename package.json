@@ -1,6 +1,6 @@
 {
   "name": "@comchatx/cx-subagents",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Lets cx hand off long jobs; follow them on the board.",
   "license": "MIT",
   "author": "ComChatX",
@@ -40,7 +40,26 @@
     "nameZh": "cx 帮手",
     "about": "让 cx 把费时的事交给帮手去做，在看板上看进度。",
     "mark": {
-      "line": "rocket"
+      "on": "cx",
+      "cx": [
+        {
+          "x": 21.424,
+          "y": 5.008,
+          "size": 12.257,
+          "ink": "cx-forest"
+        },
+        {
+          "x": 15.648,
+          "y": 10.48,
+          "size": 16.471,
+          "ink": "cx-sand"
+        },
+        {
+          "x": 7.744,
+          "y": 17.168,
+          "size": 21.45
+        }
+      ]
     },
     "section": "extensions",
     "env": {
