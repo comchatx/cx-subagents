@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- The tile's mark on the Plugins page is the signed drawing.
+
 ## 0.7.0
 
 - The card line, the README's first paragraph and its section on cx's computer stopping say what the card shows now: `description` "Lets cx hand off long jobs; follow them on the board.", `comchatx.about` 「让 cx 把费时的事交给帮手去做，在看板上看进度。」.
