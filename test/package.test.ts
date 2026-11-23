@@ -65,8 +65,8 @@ it("the comchatx field carries no description, which the Plugins page never draw
 
 it("the card line is the signed words, in English and in Chinese", () => {
   const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { description: string; comchatx: Record<string, unknown> };
-  expect(manifest.description).toBe("Lets cx hand off long jobs, with results on the board.");
-  expect(manifest.comchatx["about"]).toBe("让 cx 把费时的事交给帮手去做，结果放上看板。");
+  expect(manifest.description).toBe("Lets cx hand off long jobs; follow them on the board.");
+  expect(manifest.comchatx["about"]).toBe("让 cx 把费时的事交给帮手去做，在看板上看进度。");
 });
 
 it("the card's name is comchatx.name, the one signed on 2026-11-11", () => {
