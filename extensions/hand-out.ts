@@ -28,10 +28,14 @@ export const GO_ON =
 export const CACHE =
   "Telling a helper more about the same work reuses what it has already read, and input the model's provider still holds in its cache may cost less.";
 
+/** A fork starts from cx's own conversation, so its first prompt is not its first, and the helper's folder is never said to it. A fact for cx, no rule. */
+export const FORK =
+  "A helper started with `context: \"fork\"` carries your conversation and is told no folder of its own.";
+
 export function handOut(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {
     const guidelines = event.systemPromptOptions.toolGuidelines ??= {};
-    guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT, TO_HELPER, GO_ON, CACHE];
+    guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT, TO_HELPER, GO_ON, CACHE, FORK];
   });
 }
 
