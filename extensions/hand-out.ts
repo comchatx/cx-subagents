@@ -10,10 +10,21 @@ export const SUBAGENT_TOOL = "subagent";
 export const HAND_OUT =
   "The seller installed helpers for you: whether to hand a piece of work to one is your own judgement, and the seller need not ask for it.";
 
+/**
+ * The seller writes to a helper on its card, and the board sends it to cx as the seller's message, the card's name first; cx is the one
+ * who passes it on, and the package adds which run the card is. A pause or a stop the seller pressed is the seller's.
+ */
+export const TO_HELPER =
+  "A message that begins **@name** is the seller's words for their helper of that name on the board: pass them on with `subagent`, `steer` while it works and `resume` once it has paused or ended, and leave a helper the seller paused or stopped as it is until the seller asks otherwise.";
+
+/** A helper that ended keeps its run, so more of the same work goes on on its card, its files and what it read kept. */
+export const GO_ON =
+  "When the seller wants more from a helper that has ended, continue that helper with `resume`, which keeps its card, its files and what it read; start a new helper only where it cannot be resumed.";
+
 export function handOut(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {
     const guidelines = event.systemPromptOptions.toolGuidelines ??= {};
-    guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT];
+    guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT, TO_HELPER, GO_ON];
   });
 }
 

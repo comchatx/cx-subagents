@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>帮手</title>
+<!--
+  The package's own page on the board, the tab 帮手 / Helpers, inside the board's frame. A card is one helper, read from its file in the
+  tab: a face the package gives it, a name the seller can change, and a line that says how it stands. Helpers stand in three groups, at
+  work, done and not finished: one under another in a narrow column, side by side as the board is dragged wider.
+  The board hands the page its theme's values, cx's figure (`window.CxCharacter`, in cx's own colours) and the ready-made elements
+  (`class="kit"`). What those do not give is in the style below: a card's state, a face's colours, and the groups. The one theme value
+  the board does not hand a page, the outline of what ended with no result, is carried here, as the app's theme names it.
+-->
+<style>
+  :root, [data-theme="light"] {
+    --bad-line: #D8A398;
+    --helper-lake: #2B85AA; --helper-plum: #792F67; --helper-lilac: #9478C4; --helper-cobalt: #274893; --helper-jade: #0D844C; --helper-rust: #6F2A00; --helper-mauve: #846375; --helper-rose: #C1628A; --helper-olive: #848F1E;
+  }
+  [data-theme="dark"] {
+    --bad-line: #714F46;
+    --helper-lake: #66B6DB; --helper-plum: #AF609A; --helper-lilac: #C0AAEC; --helper-cobalt: #5077CA; --helper-jade: #72D699; --helper-rust: #B66946; --helper-mauve: #A7919C; --helper-rose: #FF99C2; --helper-olive: #A2AE44;
+  }
+  .unseen { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  #page { max-width: 40rem; margin: 0 auto; }
+  .hc-list { display: flex; flex-direction: column; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+  /* The groups: one under another; from 40rem two columns, the helpers at work in the first; from 60rem a column each. */
+  .hc-groups { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--space-6) var(--space-5); }
+  .hc-group { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+  .hc-group > h2 { margin: 0; color: var(--quiet); font-size: var(--size-small); font-weight: var(--weight-strong); line-height: var(--leading-small); }
+  @media (min-width: 40rem) {
+    #page:has(.hc-groups) { max-width: 58rem; }
+    .hc-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hc-groups[data-n="3"] { grid-template-rows: auto 1fr; }
+    .hc-groups[data-n="3"] > .hc-group:first-child { grid-row: span 2; }
+  }
+  @media (min-width: 60rem) {
+    #page:has(.hc-groups[data-n="3"]) { max-width: 88rem; }
+    .hc-groups[data-n="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none; }
+    .hc-groups[data-n="3"] > .hc-group:first-child { grid-row: auto; }
+  }
+
+  /* A card's state: a helper at work is outlined as the chat's running step is, one that ended with no result as the build outlines what failed. */
+  .hc-card { position: relative; }
+  .hc-card[data-state="working"] { border-color: var(--live-edge); }
+  .hc-card[data-state="failed"], .hc-card[data-state="timeout"], .hc-card[data-state="off"] { border-color: var(--bad-line); }
+
+  /* The head: the face, the name over the line that says how it stands. */
+  .hc-head { display: flex; align-items: flex-start; gap: var(--space-3); }
+  .hc-id { flex: 1 1 auto; min-width: 0; }
+  .hc-top { --row: calc(var(--space-7) + var(--space-2)); display: flex; align-items: flex-start; gap: var(--space-3); min-height: var(--row); }
+  .hc-name { flex: 1 1 auto; min-width: 0; margin: 0; padding-top: var(--space-2); font-size: var(--size-body); font-weight: var(--weight-strong); line-height: var(--leading-small); overflow-wrap: anywhere; }
+  .hc-name, .hc-name > button, .hc-card[data-state="working"] .hc-line { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  .hc-name:has(> button) { display: block; overflow: visible; padding-top: 0; }
+  /* Under a pointer the name takes the board's own shade behind it, as any button does, and nothing else. */
+  .hc-name > button { max-width: calc(100% + var(--space-2)); min-height: var(--row); -webkit-box-pack: center; margin-inline-start: calc(var(--space-2) * -1); padding: 0 var(--space-2); border: none; border-radius: var(--radius-small); background: none; color: inherit; font: inherit; text-align: start; overflow-wrap: anywhere; }
+  /* The name's field stands where the name stood, in the name's own box and letters, so nothing around it moves. */
+  .hc-top > .entry-field { flex: 1 1 auto; min-width: 0; height: var(--row); margin-inline-start: calc(var(--space-2) * -1 - 1px); padding: 0 var(--space-2); border-radius: var(--radius-small); font-size: var(--size-body); font-weight: var(--weight-strong); line-height: var(--leading-small); }
+  .hc-card .entry-field:focus-visible { outline: 2px solid var(--act); outline-offset: -2px; }
+
+  /* A face: cx's own figure with one ring in each of two colours, a little into the card's padding so its figure lines up with the words. */
+  .hc-face { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 3.5rem; height: 2.75rem; margin-inline-start: calc(var(--space-2) * -1); }
+  .hc-fig { display: inline-flex; --cx-forest: var(--a); --cx-forest-shade: var(--a); --cx-sand: var(--b); --cx-sand-shade: var(--b); }
+  .hc-fig > svg { display: block; }
+
+  /* The line that says how it stands, and how long at its end while it is at work. */
+  .hc-now { display: flex; align-items: baseline; gap: var(--space-4); margin: 0; color: var(--quiet); font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-line { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .hc-line > .icon { width: var(--size-small); height: var(--size-small); margin-inline-end: var(--space-2); vertical-align: -0.125em; }
+  .hc-age { flex: none; color: var(--quiet); font-size: var(--size-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .hc-card[data-state="working"] .hc-line { color: var(--ink); }
+  .hc-card[data-state="failed"] .hc-line, .hc-card[data-state="timeout"] .hc-line, .hc-card[data-state="off"] .hc-line { color: var(--bad); }
+
+  /* The steps: done with a filled tick and quiet words, the one in work with the build's ring and strong words, one not started with a dashed round. */
+  .hc-steps { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-steps > li { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; overflow-wrap: anywhere; }
+  .hc-steps > li > span:last-child { min-width: 0; }
+  .hc-step-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-small); height: 1lh; }
+  .hc-step-mark > svg { display: block; width: var(--size-small); height: var(--size-small); }
+  /* The build's ring, as the Plugins page draws it; the board hands a page its colours and not that rule. */
+  .hc-spin { display: inline-block; width: var(--size-caption); height: var(--size-caption); border: 1.5px solid var(--live-edge); border-top-color: var(--ink); border-radius: var(--radius-round); animation: hc-spin 0.8s linear infinite; }
+  @keyframes hc-spin { to { transform: rotate(1turn); } }
+  @media (prefers-reduced-motion: reduce) { .hc-spin { animation-duration: 2.4s; } }
+  .hc-steps > li[data-step="done"] { color: var(--quiet); }
+  .hc-steps > li[data-step="now"] { font-weight: var(--weight-strong); }
+  .hc-steps > li[data-step="todo"] .hc-step-mark, .hc-steps > li[data-step="held"] .hc-step-mark { color: var(--edge); }
+  .hc-steps > li[data-step="cut"] .hc-step-mark { color: var(--bad); }
+  .hc-card[data-state="stopped"] .hc-steps > li[data-step="cut"] .hc-step-mark { color: var(--edge); }
+
+  /* What a helper wrote, under its head: each file the board's file box, one under another, as wide as its name. Past three the list
+     stops at two and one press under it leads to the whole list, so a card never holds more than three rows of files. */
+  .hc-files { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+  .hc-files > li { display: flex; max-width: 100%; min-width: 0; }
+  .hc-files .file-ref { text-align: start; cursor: pointer; }
+  /* A page it read, by its address: the colour of a press, one line, cut at its end; under a pointer the board's shade for a button. It
+     opens where a link in the chat opens, in a new tab of the browser. */
+  .hc-page { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; max-width: calc(100% + var(--space-2) * 2); min-height: var(--space-7); margin-inline: calc(var(--space-2) * -1); padding: 0 var(--space-2); border-radius: var(--radius-small); color: var(--act); font-size: var(--size-small); line-height: var(--leading-small); text-decoration: none; }
+  .hc-page:hover { background: var(--hover); color: var(--act-hover); text-decoration: none; }
+  :where([data-theme="dark"]) .hc-page:hover { background: var(--float-hover); }
+  .hc-page > .icon { flex: none; width: var(--size-small); height: var(--size-small); }
+  .hc-page > span[dir] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A quiet press: its words, how many it holds, and at its end a mark that leads on. */
+  .hc-quiet { display: flex; align-items: center; gap: var(--space-3); width: fit-content; min-height: var(--space-7); margin-inline-start: calc(var(--space-2) * -1); padding: 0 var(--space-2); border: none; border-radius: var(--radius-small); background: none; color: var(--quiet); font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-quiet:hover:not(:disabled) { color: var(--ink); }
+  .hc-quiet > .icon { flex: none; width: var(--size-small); height: var(--size-small); }
+  /* A press sits close under the list it leads on from, one to a row. */
+  .entry.hc-card > .hc-quiet { margin-top: 0; }
+  .hc-card :is(button, a):focus-visible, .hc-all :is(button, a):focus-visible { outline: 2px solid var(--act); outline-offset: 2px; }
+
+  /* One helper's whole list, in the cards' place: the way back, the helper, then what it wrote and what it read. The way back stays at the
+     page's top while a long list goes under it; a row the keyboard brings into view stops below it. */
+  .hc-all { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-5); }
+  .hc-all > .hc-head, .hc-all > section, .hc-all > .hc-back { align-self: stretch; }
+  .hc-all > .hc-back { position: sticky; top: 0; z-index: 1; margin: calc(var(--space-5) * -1) calc(var(--space-6) * -1) calc(var(--space-3) * -1); padding: var(--space-5) var(--space-6) var(--space-3); background: var(--ground); }
+  html:has(.hc-all) { scroll-padding-top: calc(var(--space-8) + var(--space-6)); }
+  .hc-all > section { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+  .hc-all h3 { margin: 0; color: var(--quiet); font-size: var(--size-small); font-weight: var(--weight-strong); line-height: var(--leading-small); }
+  .hc-all .hc-name { padding-top: 0; }
+  .hc-all :is(h2, h3):focus { outline: none; }
+  .hc-all[data-state="failed"] .hc-line, .hc-all[data-state="timeout"] .hc-line, .hc-all[data-state="off"] .hc-line { color: var(--bad); }
+
+  /* A mark to press beside the name: a glyph in a round, its word on hover and in its name, as the Inbox's cards have it. */
+  .hc-acts { flex: none; display: flex; align-items: center; min-height: var(--row); margin-inline-end: calc(var(--space-2) * -1); }
+  .hc-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--space-7); height: var(--space-7); padding: 0; border: none; border-radius: var(--radius-round); background: none; color: var(--quiet); }
+  .hc-mark:hover:not(:disabled), .hc-mark[aria-expanded="true"] { color: var(--ink); }
+  .hc-mark > .icon { width: var(--size-body); height: var(--size-body); }
+  /* A question before a stop: words, and the presses at the end. */
+  .hc-ask { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-4); }
+  .hc-ask > p { flex: 1 1 16rem; margin: 0; font-size: var(--size-small); line-height: var(--leading-small); }
+  .hc-ask > div { display: flex; gap: var(--space-4); margin-inline-start: auto; }
+  /* The message for the helper is written in the chat's own message box, which the board hands the page as it is. */
+  .hc-card > .cx-box { margin: 0; }
+  .hc-note { margin: 0; color: var(--quiet); font-size: var(--size-small); line-height: var(--leading-small); }
+</style>
+</head>
+<body class="kit">
+<div class="kit-page" id="page"></div>
+<span class="unseen" role="status" id="said"></span>
+<script>
+(() => {
+  "use strict";
+  const board = window.cxBoard;
+  const root = document.documentElement;
+  const zh = () => !/^en\b/i.test(root.dataset.locale || board?.context?.locale || root.lang);
+
+  /** Every line the page prints, by language, as the signed sheet draws it. */
+  const WORDS = {
+    zh: {
+      seconds: (n) => `${n} 秒`, minutes: (n) => `${n} 分钟`, hoursMinutes: (hr, m) => `${hr} 小时 ${m} 分钟`,
+      now: { sent: "正在处理" },
+      ran: (t) => `已运行 ${t}`,
+      waiting: "等待 cx 回答",
+      paused: "已暂停",
+      done: (at, t) => `${at} 完成，用时 ${t}`,
+      stopped: (at) => `${at} 已停止`,
+      limit: (at) => `${at} 用时超过 30 分钟，已停止`,
+      error: (at) => `${at} 出错，已停止`,
+      off: "cx 的电脑关机，已中断",
+      named: (words, name) => `${words}“${name}”`,
+      rename: "重命名", name: "名称",
+      pause: "暂停", resume: "继续", stop: "停止", remove: "移除", cancel: "取消",
+      stopAsk: (name) => `停止“${name}”？停止后无法继续。`,
+      tell: "发消息", say: (name) => `给“${name}”发消息`, sayHere: "给帮手发消息", sent: "已交给 cx", give: "交给 cx",
+      group: { going: "进行中", done: "已完成", cut: "未完成" },
+      step: { done: "已完成", now: "进行中", todo: "未开始", held: "已暂停", cut: "未完成" },
+      empty: "cx 交给帮手的事会显示在这里。",
+      page: "帮手",
+      allFiles: (n) => `查看全部 ${n} 个文件`, references: (n) => `${n} 份参考资料`, createdFiles: (n) => `生成的 ${n} 个文件`,
+      back: (name) => `← ${name}`, fileOpen: (name) => `${name}，在看板中查看`, newTab: "（在新标签页打开）",
+    },
+    en: {
+      seconds: (n) => `${n} sec`, minutes: (n) => `${n} min`, hoursMinutes: (hr, m) => `${hr} hr ${m} min`,
+      now: { sent: "Working on it" },
+      ran: (t) => `Running for ${t}`,
+      waiting: "Waiting for cx's answer",
+      paused: "Paused",
+      done: (at, t) => `Done in ${t} · ${at}`,
+      stopped: (at) => `Stopped · ${at}`,
+      limit: (at) => `Stopped at the 30-minute limit · ${at}`,
+      error: (at) => `Stopped by an error · ${at}`,
+      off: "Interrupted when cx's computer switched off",
+      named: (words, name) => `${words} “${name}”`,
+      rename: "Rename", name: "Name",
+      pause: "Pause", resume: "Resume", stop: "Stop", remove: "Remove", cancel: "Cancel",
+      stopAsk: (name) => `Stop “${name}”? It can't be resumed afterwards.`,
+      tell: "Message", say: (name) => `Message “${name}”`, sayHere: "Message the helper", sent: "Sent to cx", give: "Send to cx",
+      group: { going: "In progress", done: "Completed", cut: "Not finished" },
+      step: { done: "Done", now: "In progress", todo: "Not started", held: "Paused", cut: "Not finished" },
+      empty: "What cx hands to helpers will be here.",
+      page: "Helpers",
+      allFiles: (n) => `Show all ${n} files`, references: (n) => (n === 1 ? "1 reference" : `${n} references`), createdFiles: (n) => (n === 1 ? "Created 1 file" : `Created ${n} files`),
+      back: (name) => `← ${name}`, fileOpen: (name) => `${name}, show on the board`, newTab: " (Opens in a new tab)",
+    },
+  };
+  const w = () => (zh() ? WORDS.zh : WORDS.en);
+  /** What the page sends for a helper: its name as a group chat names a person, then the seller's words. */
+  const toCx = (name, words) => `**@${name}** ${words}`;
+
+  // A face is a number the package gives each helper in order: the next of 108 ordered pairs of eleven colours. The colours stand round a
+  // ring in an order in which neighbours differ most; face n in the first round takes a colour and its neighbour, in the next round the
+  // colour two along, and so on. Forest with sand, either way round, is left out: forest left and sand right is cx.
+  const RING = ["lake", "rust", "sand", "lilac", "cobalt", "olive", "mauve", "forest", "jade", "plum", "rose"];
+  const OWN = new Set(["forest", "sand"]);
+  const PAIRS = [];
+  for (let round = 0; round < RING.length - 1; round++) for (let at = 0; at < RING.length; at++) {
+    const left = RING[at], right = RING[(at + 1 + round) % RING.length];
+    if (!(OWN.has(left) && OWN.has(right))) PAIRS.push([left, right]);
+  }
+  const token = (name) => (OWN.has(name) ? `var(--cx-${name})` : `var(--helper-${name})`);
+  const pair = (n) => PAIRS[((n % PAIRS.length) + PAIRS.length) % PAIRS.length];
+
+  const h = (tag, attrs, ...children) => {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs ?? {})) {
+      if (value === undefined || value === null || value === false) continue;
+      if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? "" : String(value));
+    }
+    for (const child of children.flat(Infinity)) if (child !== undefined && child !== null && child !== false) node.append(child);
+    return node;
+  };
+  const icon = (...paths) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "icon"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+    for (const d of paths) { const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); path.setAttribute("d", d); svg.append(path); }
+    return svg;
+  };
+  const alertIcon = () => icon("M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z", "M12 8v5", "M12 16.4v.1");
+
+  /** A card's file read: its front matter, one fact a line as JSON, and the task under it. */
+  function readCard(file, raw) {
+    const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(raw);
+    if (match === null) return undefined;
+    const facts = {};
+    for (const line of match[1].split(/\r?\n/)) {
+      const at = line.indexOf(": ");
+      if (at <= 0) continue;
+      try { facts[line.slice(0, at)] = JSON.parse(line.slice(at + 2)); } catch { facts[line.slice(0, at)] = line.slice(at + 2); }
+    }
+    const at = Date.parse(facts.at), ended = Date.parse(facts.ended), since = Date.parse(facts.since);
+    if (facts.kind !== "helper" || !Number.isFinite(at)) return undefined;
+    const steps = Array.isArray(facts.steps) ? facts.steps.filter((one) => typeof one?.words === "string" && one.words !== "" && ["done", "now", "todo"].includes(one.state)) : [];
+    const list = (value) => (Array.isArray(value) ? value.filter((one) => typeof one === "string" && one !== "") : []);
+    return pressedAs({ file, raw, name: String(facts.title ?? ""), face: Number.isInteger(facts.face) ? facts.face : 0, state: String(facts.state ?? "done"), at, ended: Number.isFinite(ended) ? ended : undefined, took: typeof facts.took === "number" ? facts.took : undefined, ran: typeof facts.ran === "number" ? facts.ran : 0, since: Number.isFinite(since) ? since : undefined, files: list(facts.files), reads: list(facts.reads), steps, press: typeof facts.press === "string" ? facts.press : undefined });
+  }
+
+  /**
+   * A card as the seller's press leaves it, while the press waits in its file for the package to do: paused, at work again, stopped, or
+   * gone. The package writes the card again once it is done, and the card is then drawn as the run stands.
+   */
+  function pressedAs(one) {
+    const ran = one.ran + (one.state === "working" && one.since !== undefined ? Math.max(0, Math.floor((Date.now() - one.since) / 1000)) : 0);
+    if (one.press === "pause" && (one.state === "working" || one.state === "waiting")) return { ...one, state: "paused", ran, since: undefined };
+    if (one.press === "resume" && one.state === "paused") return { ...one, state: "working", since: Date.now() };
+    if (one.press === "stop" && atWork(one)) return { ...one, state: "stopped", ended: Date.now(), ran, since: undefined };
+    return one;
+  }
+
+  const NS = "http://www.w3.org/2000/svg";
+  const draft = (markup) => { const svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("aria-hidden", "true"); svg.innerHTML = markup; return svg; };
+  /** A step's mark: a filled tick, the build's ring, a dashed round, a round with two bars where it was paused, a round with a bar where it was cut off. */
+  function stepMark(state) {
+    if (state === "now") return h("span", { class: "hc-spin", "aria-hidden": "true" });
+    if (state === "done") return draft('<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.8 8.3l2.2 2.2 4.2-4.6" fill="none" stroke="var(--raised)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>');
+    if (state === "held") return draft('<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.4 5.6v4.8M9.6 5.6v4.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>');
+    if (state === "cut") return draft('<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.2 8h5.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>');
+    return draft('<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 2.2"/>');
+  }
+  /** A step as its card stands: the one in work held while the helper is paused or waits, and cut off once it ended, done or not, while the step was still in work. */
+  const stepAs = (card, state) => state !== "now" ? state : card.state === "paused" || card.state === "waiting" ? "held" : card.state === "working" ? "now" : "cut";
+  function stepsOf(one) {
+    if (one.steps.length === 0) return null;
+    return h("ol", { class: "hc-steps" }, one.steps.map((step) => {
+      const state = stepAs(one, step.state);
+      return h("li", { "data-step": state }, h("span", { class: "hc-step-mark" }, stepMark(state)), h("span", { dir: "auto" }, step.words, h("span", { class: "unseen" }, zh() ? `（${w().step[state]}）` : ` (${w().step[state]})`)));
+    }));
+  }
+
+  const page = document.getElementById("page");
+  /** The cards as last read, by file, each with the time its file had then. */
+  const cards = new Map();
+  /** What the seller has open on a card: its name's field. */
+  const naming = new Set();
+  /** What the seller has open on a card besides: the question before a stop, the message box, and the line once a message went. */
+  const asking = new Set();
+  const saying = new Set();
+  const notes = new Set();
+  /** Each card's message box, the board's own, kept while the page draws again so its words stay. */
+  const boxes = new Map();
+  const said = document.getElementById("said");
+  const say = (words) => { said.textContent = ""; setTimeout(() => { said.textContent = words; }, 50); };
+
+  /** A time since in the build's own words: seconds under a minute, then minutes, then hours and minutes. */
+  const span = (seconds) => seconds < 60 ? w().seconds(Math.max(1, Math.floor(seconds))) : seconds < 3600 ? w().minutes(Math.floor(seconds / 60)) : w().hoursMinutes(Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60));
+  const clock = (ms) => { const at = new Date(ms); return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`; };
+  // The time a helper ran counts only at work: what it worked before, and its present stretch while it works; waiting or paused it stands.
+  const ran = (card) => card.ran + (card.state === "working" && card.since !== undefined ? Math.max(0, Math.floor((Date.now() - card.since) / 1000)) : 0);
+  const atWork = (card) => card.state === "working" || card.state === "waiting" || card.state === "paused";
+  const groupOf = (card) => (atWork(card) ? "going" : card.state === "done" ? "done" : "cut");
+
+  /** The line that says how it stands or how it ended. */
+  function nowLine(card) {
+    const end = card.ended ?? card.at;
+    if (card.state === "working") return [w().now.sent];
+    if (card.state === "waiting") return [w().waiting];
+    if (card.state === "paused") return [w().paused];
+    if (card.state === "done") return [w().done(clock(end), span(card.took ?? Math.round((end - card.at) / 1000)))];
+    if (card.state === "stopped") return [w().stopped(clock(end))];
+    return [alertIcon(), card.state === "timeout" ? w().limit(clock(end)) : card.state === "failed" ? w().error(clock(end)) : w().off];
+  }
+
+  /** A face: cx's figure, as the board hands it, in the card's two colours. At work it works, waiting or ended well it rests, ended badly it sleeps. */
+  function face(card) {
+    const fig = h("span", { class: "hc-fig" });
+    const state = card.state === "working" ? "analysing" : card.state === "done" || card.state === "waiting" ? "ready" : "sleeping";
+    // A board that hands no figure leaves the face's place empty; the card stands as it is.
+    if (window.CxCharacter !== undefined) queueMicrotask(() => window.CxCharacter.mount(fig, { size: 28, state, motion: "auto" }));
+    const [left, right] = pair(card.face);
+    return h("span", { class: "hc-face", "aria-hidden": "true", "data-face": `${left}-${right}`, style: `--a: ${token(left)}; --b: ${token(right)};` }, fig);
+  }
+
+  /** Writes the seller's name into the card's file, read again first, so what the package wrote meanwhile stays. */
+  async function rename(card, value) {
+    const name = value.trim();
+    naming.delete(card.file);
+    if (name === "" || name === card.name) { draw(); return; }
+    card.name = name;
+    draw();
+    try {
+      const raw = await board.read(card.file);
+      const next = raw.replace(/^title: .*$/m, () => `title: ${JSON.stringify(name)}`);
+      if (next !== raw) await board.write(card.file, next);
+    } catch { /* the board's next read draws the name the file holds */ }
+  }
+
+  /**
+   * Writes the seller's press into the card's file, read again first, for the package to do; the card is drawn as the press leaves it at
+   * once. Where the board does not take the write, the card is read again and drawn as its file stands.
+   */
+  /** A card's file with the press in its head, in place of any it held: the task under the head is left as it is. */
+  const withPress = (raw, press) => raw.replace(/^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)/, (_, open, head, close) =>
+    `${open}${head.split(/\r?\n/).filter((line) => !line.startsWith("press: ")).join("\n")}\npress: ${JSON.stringify(press)}${close}`);
+  async function pressOn(one, press) {
+    const was = cards.get(one.file);
+    if (press === "remove") cards.delete(one.file);
+    else if (was !== undefined) cards.set(one.file, { ...pressedAs({ ...was, press }), modified: was.modified });
+    draw();
+    try {
+      const raw = await board.read(one.file);
+      await board.write(one.file, withPress(raw, press));
+    } catch {
+      const now = cards.get(one.file);
+      if (now !== undefined) now.modified = undefined;
+      else if (was !== undefined) cards.set(one.file, { ...was, modified: undefined });
+      read();
+    }
+  }
+
+  /** The message box for one card, the board's own: Enter sends, Escape closes it and keeps what was written. */
+  function sayBox(one) {
+    // One box a card: the board names its control in the board's language at each change of language, and the words stay in it.
+    let box = boxes.get(one.file);
+    if (box === undefined) {
+      box = board.box({ placeholder: w().sayHere, control: { name: { zh: WORDS.zh.give, en: WORDS.en.give } }, send: async (words) => {
+        const text = words.trim();
+        if (text === "") return;
+        // Where the board could not send now it puts the words in the chat's box instead (`drafted`): the card then says nothing went.
+        const answer = await board.send(toCx(cards.get(one.file)?.name ?? one.name, text), { card: one.file });
+        saying.delete(one.file);
+        if (answer === "sent") notes.add(one.file);
+        boxes.delete(one.file);
+        draw();
+        focusOn(one, '[data-act="tell"]');
+        if (answer === "sent") say(w().sent);
+      } });
+      box.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); saying.delete(one.file); draw(); focusOn(one, '[data-act="tell"]'); } });
+      boxes.set(one.file, box);
+    }
+    const field = box.querySelector("textarea, input");
+    field?.setAttribute("aria-label", w().say(one.name));
+    field?.setAttribute("placeholder", w().sayHere);
+    field?.setAttribute("data-act", "say");
+    return box;
+  }
+  const boxEnd = (one) => { const field = document.getElementById(one.file)?.querySelector('[data-act="say"]'); if (field) { field.focus({ preventScroll: true }); field.setSelectionRange?.(field.value.length, field.value.length); } };
+
+  /** A page it read is an address; anything else it read is a file, by its path in cx's folder. */
+  const isPage = (one) => /^https?:\/\//i.test(one);
+  /** A file's box, as the board draws a file a page names: a press shows the file on a tab of the board, which the board does itself. */
+  const fileBox = (path) => h("button", { type: "button", class: "file-ref", dir: "auto", "data-act": "file", "data-cx-file": path, "aria-label": w().fileOpen(path.split("/").at(-1)) },
+    icon("M7 3.5h7l4 4v13H7z", "M14 3.5v4h4"), h("span", { class: "file-ref-name" }, path.split("/").at(-1)));
+  /** A page by its address, without its scheme: it opens in a new tab of the browser, as a link in the chat does. */
+  const pageLink = (address) => h("a", { class: "hc-page", "data-act": "page", href: address, target: "_blank", rel: "noopener noreferrer", title: address.replace(/^https?:\/\//i, "") },
+    icon("M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z", "M3.5 12h17", "M12 3.5c2.7 2.3 2.7 14.7 0 17", "M12 3.5c-2.7 2.3-2.7 14.7 0 17"), h("span", { dir: "ltr" }, address.replace(/^https?:\/\//i, "")), h("span", { class: "unseen" }, w().newTab));
+  const row = (one) => h("li", {}, isPage(one) ? pageLink(one) : fileBox(one));
+  const turn = () => icon("M9.5 6l6 6-6 6");
+
+  /** One helper's whole list stands in the cards' place: which helper, and which part the seller came to. */
+  let view = null;
+  const goTo = (one, at) => () => { view = { file: one.file, at }; draw(); land(); };
+
+  /** What a helper wrote and read so far: up to three files on the card, past three two and the press to them all; what it read, one press. */
+  function lists(one) {
+    const folds = one.files.length > 3;
+    return [
+      one.files.length > 0 && h("ul", { class: "hc-files" }, (folds ? one.files.slice(0, 2) : one.files).map(row)),
+      folds && h("button", { type: "button", class: "hc-quiet", "data-act": "all", onclick: goTo(one, "files") }, h("span", {}, w().allFiles(one.files.length)), turn()),
+      one.reads.length > 0 && h("button", { type: "button", class: "hc-quiet", "data-act": "reads", onclick: goTo(one, "reads") }, h("span", {}, w().references(one.reads.length)), turn()),
+    ];
+  }
+
+  /**
+   * Back to the cards, the keyboard on the press the seller came by and that press in view. The board scrolls outside the page's frame and
+   * sizes the frame to the page's height after this draw; where the cards' height is not the list's, the press is brought into view again
+   * when the frame takes its new size. Where it is the same, no resize comes, and the first look is the only one.
+   */
+  function leave() {
+    const { file, at } = view;
+    view = null;
+    const height = () => Math.ceil(document.documentElement.getBoundingClientRect().height);
+    const before = height();
+    draw();
+    const press = document.getElementById(file)?.querySelector(`[data-act="${at === "reads" ? "reads" : "all"}"]`) ?? document.getElementById(file)?.querySelector("[data-act]");
+    press?.focus({ preventScroll: true });
+    press?.scrollIntoView({ block: "nearest" });
+    if (height() !== before) window.addEventListener("resize", () => document.activeElement?.scrollIntoView({ block: "nearest" }), { once: true });
+  }
+
+  /**
+   * One helper's whole list: the way back, the helper and how it stands, the files it wrote, then what it read, pages before files. What
+   * it read has its heading over it; the files have theirs only where both lists stand, the press having said what a list of files is.
+   */
+  function whole(one) {
+    const pages = one.reads.filter(isPage), opened = one.reads.filter((read) => !isPage(read));
+    const part = (key, words, items) => items.length > 0 && h("section", { id: `part-${key}`, "aria-labelledby": `whole-${key}` },
+      h("h3", { id: `whole-${key}`, tabindex: "-1", hidden: key === "files" && one.reads.length === 0 }, words(items.length)), h("ul", { class: "hc-files" }, items.map(row)));
+    return h("div", { class: "hc-all", id: `${one.file}-whole`, "data-state": one.state, onkeydown: (event) => { if (event.key === "Escape") { event.preventDefault(); leave(); } } },
+      h("div", { class: "hc-back" }, h("button", { type: "button", class: "hc-quiet", "data-act": "back", onclick: leave }, w().back(w().page))),
+      h("div", { class: "hc-head" }, face(one), h("div", { class: "hc-id" }, h("h2", { class: "hc-name", id: "whole-name", tabindex: "-1", dir: "auto" }, one.name), h("p", { class: "hc-now" }, h("span", { class: "hc-line" }, nowLine(one))))),
+      part("files", w().createdFiles, one.files), part("reads", w().references, [...pages, ...opened]));
+  }
+  /** The keyboard lands on the part the seller asked for, brought into view by the board's own scroll; the files are at the page's top. */
+  function land() {
+    const at = view?.at === "reads" ? document.getElementById("whole-reads") : null;
+    if (at && !at.hidden) { at.focus({ preventScroll: true }); at.scrollIntoView({ block: "start" }); return; }
+    document.querySelector(".hc-back")?.scrollIntoView({ block: "start" });
+    document.getElementById("whole-name")?.focus({ preventScroll: true });
+  }
+
+  /** The name fields open while the page draws again: each is put back as it stands, so its words, its caret and the keyboard stay. */
+  let fields = new Map();
+  function card(one) {
+    const field = () => {
+      const kept = fields.get(one.file);
+      if (kept !== undefined) return kept;
+      const input = h("input", { type: "text", class: "entry-field", dir: "auto", "aria-label": w().name, autocomplete: "off", value: one.name, "data-act": "name-field",
+        onkeydown: (event) => {
+          if (event.isComposing) return;
+          if (event.key === "Enter") { event.preventDefault(); input.dataset.settled = "1"; rename(one, input.value).then(() => focusOn(one, '[data-act="name"]')); }
+          if (event.key === "Escape") { event.preventDefault(); input.dataset.settled = "1"; naming.delete(one.file); draw(); focusOn(one, '[data-act="name"]'); }
+        },
+        // Leaving the field keeps the new name, as the signed page does, and the seller's move lands: the keyboard goes on to where Tab
+        // sent it, and a press that took the keyboard out does what was pressed, on the control drawn in its place. The page's own redraw
+        // while a name is typed is no leaving.
+        onblur: (event) => {
+          if (input.dataset.settled || drawing) return;
+          const to = event.relatedTarget, act = to?.dataset?.act, host = to?.closest?.(".hc-card")?.id;
+          const press = pressed;
+          pressed = null;
+          input.dataset.settled = "1";
+          rename(one, input.value);
+          if (press) { const now = document.getElementById(press.host)?.querySelectorAll(`[data-act="${press.act}"]`)[press.n]; now?.focus({ preventScroll: true }); now?.click(); }
+          else if (act && host) document.getElementById(host)?.querySelector(`[data-act="${act}"]`)?.focus({ preventScroll: true });
+        } });
+      return input;
+    };
+    const name = naming.has(one.file) ? field()
+      : h("h3", { class: "hc-name", id: `${one.file}-name`, dir: "auto" },
+        h("button", { type: "button", "data-act": "name", title: w().rename, "aria-label": w().named(w().rename, one.name), onclick: () => { naming.add(one.file); draw(); const input = document.getElementById(one.file)?.querySelector('[data-act="name-field"]'); input?.focus(); input?.select(); } }, one.name));
+    const age = atWork(one) ? h("span", { class: "hc-age", "data-age": one.file, "aria-label": w().ran(span(ran(one))) }, span(ran(one))) : null;
+    // What the seller can do with the helper: write to it through cx while it works, is paused or ended with something to go on from;
+    // pause it at work and let a paused one go on; stop one at work after a question; remove one that is no longer at work.
+    const hears = one.state === "working" || one.state === "paused" || one.state === "done" || one.state === "failed";
+    const asks = asking.has(one.file) && atWork(one);
+    const says = saying.has(one.file) && hears && !asks;
+    const mark = (act, words, paths, onclick) => h("button", { type: "button", class: "hc-mark", "data-act": act, "aria-label": w().named(words, one.name), title: words, onclick }, icon(...paths));
+    const acts = [
+      hears && h("button", { type: "button", class: "hc-mark", "data-act": "tell", "aria-label": w().say(one.name), title: w().tell, "aria-expanded": String(says),
+        onclick: () => { notes.delete(one.file); if (saying.has(one.file)) { saying.delete(one.file); draw(); focusOn(one, '[data-act="tell"]'); } else { saying.add(one.file); draw(); boxEnd(one); } } }, icon("M5 6h14v10h-7.5L7.5 19.5V16H5z")),
+      one.state === "working" && mark("pause", w().pause, ["M9 5.5v13", "M15 5.5v13"], () => { pressOn(one, "pause"); focusOn(one, '[data-act="resume"]'); say(w().paused); }),
+      one.state === "paused" && mark("resume", w().resume, ["M8 5.5v13l10.5-6.5z"], () => { pressOn(one, "resume"); focusOn(one, '[data-act="pause"]'); }),
+      atWork(one) && mark("stop", w().stop, ["M6.5 6.5h11v11h-11z"], () => { asking.add(one.file); draw(); focusOn(one, '[data-act="keep"]'); }),
+      !atWork(one) && mark("remove", w().remove, ["M6.5 6.5l11 11", "M17.5 6.5l-11 11"], () => {
+        const at = [...page.querySelectorAll(".hc-card")].findIndex((each) => each.id === one.file);
+        pressOn(one, "remove");
+        const left = [...page.querySelectorAll(".hc-card")];
+        (left[Math.min(at, left.length - 1)]?.querySelector("[data-act]") ?? page.querySelector(".board-empty"))?.focus({ preventScroll: true });
+      }),
+    ];
+    const head = h("div", { class: "hc-head" }, face(one),
+      h("div", { class: "hc-id" }, h("div", { class: "hc-top" }, name, h("div", { class: "hc-acts" }, acts)), h("p", { class: "hc-now" }, h("span", { class: "hc-line" }, nowLine(one)), age)));
+    const ask = asks && h("div", { class: "hc-ask", role: "group", "aria-label": w().stopAsk(one.name), onkeydown: (event) => { if (event.key === "Escape") { event.preventDefault(); asking.delete(one.file); draw(); focusOn(one, '[data-act="stop"]'); } } },
+      h("p", {}, w().stopAsk(one.name)), h("div", {},
+        h("button", { type: "button", "data-act": "keep", onclick: () => { asking.delete(one.file); draw(); focusOn(one, '[data-act="stop"]'); } }, w().cancel),
+        h("button", { type: "button", "data-act": "stop-yes", onclick: () => { asking.delete(one.file); saying.delete(one.file); notes.delete(one.file); pressOn(one, "stop"); focusOn(one, '[data-act="remove"]'); say(w().stopped(clock(Date.now()))); } }, w().stop)));
+    const note = notes.has(one.file) && !says && h("p", { class: "hc-note" }, w().sent);
+    return h("li", {}, h("article", { class: "entry hc-card", id: one.file, "data-state": one.state, "aria-labelledby": naming.has(one.file) ? undefined : `${one.file}-name`, "aria-label": naming.has(one.file) ? one.name : undefined },
+      head, ask, stepsOf(one), lists(one), says && sayBox(one), note));
+  }
+
+  const focusOn = (one, selector) => document.getElementById(one.file)?.querySelector(selector)?.focus({ preventScroll: true });
+
+  /** The page drawn from the cards: three groups in the order a seller looks for them, at work, done, not finished; newest first in each. */
+  let drawing = false;
+  function draw() {
+    drawing = true;
+    const focused = document.activeElement;
+    const host = focused?.closest?.(".hc-card, .hc-all");
+    const held = host ? { file: host.classList.contains("hc-all") ? `${view?.file}-whole` : host.id, part: focused.closest(".hc-all section")?.id ?? "", act: focused.dataset.act, key: focused.dataset.cxFile ?? focused.getAttribute("href") ?? focused.id } : undefined;
+    const listed = view && cards.get(view.file);
+    if (view && listed === undefined) view = null;
+    if (listed) {
+      page.replaceChildren(whole(listed));
+      if (held) (findHeld(held) ?? document.getElementById("whole-name"))?.focus({ preventScroll: true });
+      drawing = false;
+      return;
+    }
+    fields = new Map([...page.querySelectorAll('[data-act="name-field"]')].filter((input) => naming.has(input.closest(".hc-card")?.id) && !input.dataset.settled).map((input) => [input.closest(".hc-card").id, input]));
+    const caret = held?.act === "name-field" || held?.act === "say" ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : undefined;
+    const shown = [...cards.values()].sort((a, b) => b.at - a.at || (a.file < b.file ? 1 : -1));
+    const groups = ["going", "done", "cut"].map((key) => ({ key, cards: shown.filter((one) => groupOf(one) === key) })).filter((group) => group.cards.length > 0);
+    page.replaceChildren(shown.length === 0 ? h("p", { class: "board-empty", tabindex: "-1" }, w().empty)
+      : groups.length === 1 ? h("ul", { class: "hc-list" }, groups[0].cards.map(card))
+        : h("div", { class: "hc-groups", "data-n": String(groups.length) }, groups.map((group) =>
+          h("section", { class: "hc-group", "data-group": group.key, "aria-labelledby": `group-${group.key}` }, h("h2", { id: `group-${group.key}` }, w().group[group.key]), h("ul", { class: "hc-list" }, group.cards.map(card))))));
+    if (held && !naming.has(held.file) && held.act !== "name-field" && held.act !== "say") findHeld(held)?.focus({ preventScroll: true });
+    for (const act of ["name-field", "say"]) if (held?.act === act && (act === "say" ? saying : naming).has(held.file)) { const input = document.getElementById(held.file)?.querySelector(`[data-act="${act}"]`); input?.focus({ preventScroll: true }); if (caret !== undefined) input?.setSelectionRange(caret[0], caret[1]); }
+    fields = new Map();
+    drawing = false;
+  }
+
+  /**
+   * The control the keyboard was on, drawn again: the same file or page by what it holds and the part of the list it is in, a file both
+   * written and read standing in each, else the same press. A file box that gave its
+   * place to the press to the whole list, as a fourth file comes, hands the keyboard to that press.
+   */
+  function findHeld(held) {
+    const host = document.getElementById(held.file);
+    if (!host) return undefined;
+    const same = [...host.querySelectorAll(held.act ? `[data-act="${held.act}"]` : "[id]")].find((one) => (one.dataset.cxFile ?? one.getAttribute("href") ?? one.id) === held.key && (one.closest(".hc-all section")?.id ?? "") === held.part);
+    if (same) return same;
+    if (held.act === "file") return host.querySelector('[data-act="all"]') ?? undefined;
+    return held.act ? host.querySelector(`[data-act="${held.act}"]`) ?? undefined : undefined;
+  }
+
+  // The control on a card a pointer is pressing, until its click or a key: what a name's field hands the press on to.
+  let pressed = null;
+  window.addEventListener("pointerdown", (event) => {
+    const to = event.target.closest?.("[data-act]"), host = to?.closest(".hc-card");
+    pressed = to && host && to.dataset.act !== "name-field" ? { act: to.dataset.act, host: host.id, n: [...host.querySelectorAll(`[data-act="${to.dataset.act}"]`)].indexOf(to) } : null;
+  }, true);
+  for (const kind of ["click", "keydown", "pointercancel"]) window.addEventListener(kind, () => { pressed = null; }, true);
+
+  /** Reads the tab: each card whose file is new or changed is read again; a card the seller is naming keeps its field until it is left. */
+  let reading = Promise.resolve();
+  const read = () => (reading = reading.then(async () => {
+    let listed;
+    try { listed = await board.list(); } catch { return; }
+    const want = new Map(listed.filter((row) => /-subagent-[A-Za-z0-9_-]+\.md$/.test(row.file) && !row.file.includes("/")).map((row) => [row.file, row]));
+    let changed = false;
+    for (const file of [...cards.keys()]) if (!want.has(file)) { cards.delete(file); changed = true; }
+    await Promise.all([...want.values()].map(async (row) => {
+      const had = cards.get(row.file);
+      if (had !== undefined && had.modified === row.modified) return;
+      let raw;
+      try { raw = await board.read(row.file); } catch { return; }
+      const one = readCard(row.file, raw);
+      if (one === undefined || one.press === "remove") { if (had !== undefined) { cards.delete(row.file); changed = true; } return; }
+      if (had !== undefined && naming.has(row.file)) one.name = had.name;
+      cards.set(row.file, { ...one, modified: row.modified });
+      changed = true;
+    }));
+    if (changed || page.childElementCount === 0) draw();
+  }));
+
+  if (board === undefined) { page.replaceChildren(h("p", { class: "board-empty" }, w().empty)); return; }
+  board.on("files", read);
+  board.on("context", () => { root.lang = zh() ? "zh" : "en"; document.title = w().page; draw(); });
+  root.lang = zh() ? "zh" : "en";
+  document.title = w().page;
+  read();
+  // How long each helper at work has run, kept up to the second.
+  setInterval(() => {
+    for (const one of cards.values()) if (one.state === "working") { const at = page.querySelector(`[data-age="${CSS.escape(one.file)}"]`); const words = span(ran(one)); if (at && at.textContent !== words) { at.textContent = words; at.setAttribute("aria-label", w().ran(words)); } }
+  }, 1000);
+})();
+</script>
+</body>
+</html>

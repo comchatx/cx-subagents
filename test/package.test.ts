@@ -22,18 +22,18 @@ async function loaded() {
   return { skills: loader.getSkills().skills, extensions: loader.getExtensions() };
 }
 
-it("lists no skill and loads its two extensions: the board's cards on pi's tool calls, and the sentence at each run's start", async () => {
+it("lists no skill and loads its two extensions: the helpers' cards on pi's tool calls and sessions, and the sentence at each run's start", async () => {
   const { skills, extensions } = await loaded();
   expect(skills).toEqual([]);
   expect(extensions.errors).toEqual([]);
   expect(extensions.extensions.map((one) => one.resolvedPath)).toEqual([join(ROOT, "extensions", "board-cards.ts"), join(ROOT, "extensions", "hand-out.ts")]);
-  expect(extensions.extensions.map((one) => [...one.handlers.keys()].sort())).toEqual([["session_start", "tool_call", "tool_result"], ["before_agent_start"]]);
+  expect(extensions.extensions.map((one) => [...one.handlers.keys()].sort())).toEqual([["context", "session_shutdown", "session_start", "tool_call", "tool_result"], ["before_agent_start"]]);
 });
 
-it("ships its extensions and its one helper, names pi-subagents at the version it is tested with and cx-board for the Plugins page", () => {
+it("ships its extensions, its one helper and its page, names pi-subagents at the version it is tested with and cx-board for the Plugins page", () => {
   const packed = Object.values(JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: ROOT, encoding: "utf8" })) as Record<string, { files: { path: string }[] }>);
   expect(packed).toHaveLength(1);
-  expect(packed[0]!.files.map((file) => file.path).sort()).toEqual(["LICENSE", "README.md", "README.zh-CN.md", "agents/helper.md", "extensions/board-cards.ts", "extensions/hand-out.ts", "package.json"]);
+  expect(packed[0]!.files.map((file) => file.path).sort()).toEqual(["LICENSE", "README.md", "README.zh-CN.md", "agents/helper.md", "extensions/board-cards.ts", "extensions/hand-out.ts", "extensions/steps.ts", "package.json", "page/helpers.html"]);
   const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { pi: unknown; "pi-subagents": unknown; dependencies?: unknown; peerDependencies?: unknown; devDependencies: Record<string, string>; comchatx: Record<string, unknown> };
   expect(manifest.pi).toEqual({ extensions: ["./extensions/board-cards.ts", "./extensions/hand-out.ts"] });
   expect(manifest["pi-subagents"]).toEqual({ agents: ["./agents"] });
@@ -42,11 +42,19 @@ it("ships its extensions and its one helper, names pi-subagents at the version i
     { on: "pi-subagents", tested: manifest.devDependencies["pi-subagents"], why: { en: "Lets helpers work in the background.", zh: "用于让帮手在后台做事。" } },
     { on: "@comchatx/cx-board", why: { en: "Puts helpers' cards on the board.", zh: "用于在看板上放帮手的卡片。" } },
   ]);
-  expect(manifest.devDependencies["@earendil-works/pi-coding-agent"]).toBe("1.5.0");
+  expect(manifest.devDependencies["@earendil-works/pi-coding-agent"]).toBe("1.5.2");
   // The Plugins page lists a package's skills from this field alone; with no skill there is none.
   expect(manifest.comchatx).not.toHaveProperty("skills");
-  // Named, not carried: neither installed with it by npm nor bundled.
-  expect([manifest.dependencies, manifest.peerDependencies]).toEqual([undefined, undefined]);
+  // pi-subagents is named, not carried. A helper's steps are rpiv-todo's, which npm installs with the package, at the version tested.
+  expect([manifest.dependencies, manifest.peerDependencies]).toEqual([{ "@juicesharp/rpiv-todo": "2.15.0" }, undefined]);
+});
+
+it("loads rpiv-todo's `todo` tool in a helper alone: its helper names the steps file, which pi does not load for cx", async () => {
+  const helper = readFileSync(join(ROOT, "agents", "helper.md"), "utf8");
+  expect(/^subagentOnlyExtensions: (.*)$/m.exec(helper)?.[1]).toBe("../extensions/steps.ts");
+  expect(readFileSync(join(ROOT, "extensions", "steps.ts"), "utf8")).toMatch(/^export \{ default \} from "@juicesharp\/rpiv-todo";$/m);
+  const { extensions } = await loaded();
+  expect(extensions.extensions.flatMap((one) => [...one.tools.keys()])).not.toContain("todo");
 });
 
 it("the comchatx field carries no description, which the Plugins page never draws: the card's Chinese line is about", () => {
@@ -57,12 +65,17 @@ it("the comchatx field carries no description, which the Plugins page never draw
 
 it("the card line is the signed words, in English and in Chinese", () => {
   const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { description: string; comchatx: Record<string, unknown> };
-  expect(manifest.description).toBe("Lets cx hand off long jobs, with results on the board.");
-  expect(manifest.comchatx["about"]).toBe("让 cx 把费时的事交给帮手去做，结果放上看板。");
+  expect(manifest.description).toBe("Lets cx hand off long jobs; follow them on the board.");
+  expect(manifest.comchatx["about"]).toBe("让 cx 把费时的事交给帮手去做，在看板上看进度。");
 });
 
 it("the card's name is comchatx.name, the one signed on 2026-11-11", () => {
   const field = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { comchatx: { name?: unknown; nameZh?: unknown } }).comchatx;
   expect(field.name).toBe("cx Helpers");
   expect(field.nameZh).toBe("cx 帮手");
+});
+
+it("declares its own tab on the board, 帮手 in Chinese and Helpers in English, drawn by its own page", () => {
+  const field = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { comchatx: { board?: unknown } }).comchatx;
+  expect(field.board).toEqual({ tab: "帮手", page: "page/helpers.html", name: { zh: "帮手", en: "Helpers" } });
 });
