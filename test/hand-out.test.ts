@@ -29,8 +29,8 @@ it("leaves to cx which work to hand out and when to ask the seller: the sentence
   expect(HAND_OUT).not.toMatch(/listing|research|long|when you|always|never/i);
 });
 
-it("tells cx what a continuation costs as a fact: soon after, the cache; later, the whole run; unrelated work, nothing saved; and sets no time", () => {
-  expect(CACHE).toMatch(/soon after it ends can read its earlier run from the model's cache, which costs less/);
-  expect(CACHE).toMatch(/later, the whole run is read again, and for unrelated work the cache saves nothing/);
+it("tells cx what a continuation costs as a fact: it reuses what the helper read, and what the provider still holds may cost less; no time, no rule", () => {
+  expect(CACHE).toBe("Telling a helper more about the same work reuses what it has already read, and input the model's provider still holds in its cache may cost less.");
+  expect(CACHE).not.toMatch(/soon|later|unrelated|saves nothing/i);
   expect(CACHE).not.toMatch(/\d|minute|close|wait|must|always|never/i);
 });

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { FOLDERS, readCard, TAB, type ReadCard } from "../extensions/board-cards.js";
+import { readCard, TAB, type ReadCard } from "../extensions/board-cards.js";
+import { FOLDERS } from "../extensions/own-folder.js";
 import { Box, firstUser, said, scriptedModel, SELLER_PLUGIN, type Answer } from "./world.js";
 
 const PERSON = "acct_9Fd1";
@@ -37,10 +38,10 @@ async function eventually<T>(read: () => T, test: (value: T) => boolean, boundMs
  * A box as cx's computer stands: the seller's plugin installed in the tree's own `.pi/settings.json` (`pi install -l`), the person's
  * board under the tree. The scripted helper does what its task says, as a model would: it writes where the task puts it.
  */
-async function boxWith(script: (body: Body, last: string) => { role: string; answer: Answer }) {
+async function boxWith(script: (body: Body, last: string) => { role: string; answer: Answer }, subagent?: Record<string, unknown>) {
   const model = await scriptedModel(script);
   closers.push(model.close);
-  const box = new Box(model.url);
+  const box = new Box(model.url, subagent === undefined ? {} : { subagent });
   boxes.push(box);
   const tenant = join(box.home, "tenant");
   mkdirSync(join(tenant, ".pi"), { recursive: true });
@@ -111,4 +112,46 @@ it("tells a helper whose task names a place that the place wins, and the result 
   expect(readdirSync(join(tenant, folder))).toEqual([]);
   expect(done!.files).toEqual(["reports/june.md"]);
   expect(existsSync(join(tenant, folder))).toBe(true);
+}, 180_000);
+
+/**
+ * Two new helpers started together, and each is told once of a folder of its own, made for it: cx's call is handed to pi-subagents as
+ * asked, and each child is told at its first prompt, whichever way the call starts it.
+ */
+async function twoHelpers(call: Record<string, unknown>, options: { readonly subagent?: Record<string, unknown>; readonly script?: string } = {}) {
+  const { box, model, tenant } = await boxWith((body, last) => {
+    const asked = firstUser(body);
+    if (asked.includes("HELPER-ONE") || asked.includes("HELPER-TWO")) return { role: asked.includes("HELPER-ONE") ? "one" : "two", answer: text("CHILD-DONE") };
+    if (last.includes("Start both.")) return { role: "parent", answer: tool("subagent", call) };
+    return { role: "parent", answer: text("PARENT-NOTED") };
+  }, options.subagent);
+  if (options.script !== undefined) writeFileSync(join(tenant, "both.js"), options.script);
+  box.prompt("Start both.");
+  const firsts = await eventually(() => ["one", "two"].map((role) => model.asked.find((one) => one.role === role)), (list) => list.every((one) => one !== undefined), 90_000);
+  const told = firsts.map((one) => one!.last.split("Your own folder for this work is").length - 1);
+  const folders = firsts.map((one) => folderIn(one!.last));
+  return { told, folders, made: readdirSync(join(tenant, FOLDERS, PERSON)).sort(), tenant };
+}
+
+it("tells each helper of a parallel workflow once of a folder of its own", async () => {
+  const { told, folders, made, tenant } = await twoHelpers({ workflow: "parallel", args: { tasks: [{ agent: "helper", task: "HELPER-ONE: price A." }, { agent: "helper", task: "HELPER-TWO: price B." }] }, async: true });
+  expect(told).toEqual([1, 1]);
+  expect(new Set(folders).size).toBe(2);
+  expect(made).toEqual(folders.map((one) => one!.split("/").at(-1)).sort());
+  for (const folder of folders) expect(existsSync(join(tenant, folder!))).toBe(true);
+}, 180_000);
+
+it("tells each helper of a scripted chain once of a folder of its own", async () => {
+  const script = "await runs.run('one', { agent: 'helper', task: 'HELPER-ONE: read.' });\nreturn runs.run('two', { agent: 'helper', task: 'HELPER-TWO: write.' });\n";
+  const { told, folders, made } = await twoHelpers({ workflow: "./both.js", async: true }, { script });
+  expect(told).toEqual([1, 1]);
+  expect(new Set(folders).size).toBe(2);
+  expect(made).toEqual(folders.map((one) => one!.split("/").at(-1)).sort());
+}, 180_000);
+
+it("tells each helper of a chain once of a folder of its own where workflow scripts are off and pi-subagents compiles the chain", async () => {
+  const { told, folders, made } = await twoHelpers({ task: "Original.", chain: [{ agent: "helper", task: "HELPER-ONE: {task}" }, { agent: "helper", task: "HELPER-TWO: after {previous}" }], async: true }, { subagent: { disabledFeatures: ["workflow-scripts"] } });
+  expect(told).toEqual([1, 1]);
+  expect(new Set(folders).size).toBe(2);
+  expect(made).toEqual(folders.map((one) => one!.split("/").at(-1)).sort());
 }, 180_000);

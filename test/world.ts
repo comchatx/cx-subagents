@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -81,7 +81,7 @@ export class Box {
   stderr = "";
   #next = 0;
 
-  constructor(modelUrl: string, options: { readonly config?: boolean; readonly replay?: boolean; readonly packages?: readonly string[]; readonly extension?: string } = {}) {
+  constructor(modelUrl: string, options: { readonly config?: boolean; readonly subagent?: Record<string, unknown>; readonly replay?: boolean; readonly packages?: readonly string[]; readonly extension?: string } = {}) {
     this.home = mkdtempSync(join(tmpdir(), "cx-subagents-"));
     const agent = join(this.home, "agent");
     const tenant = join(this.home, "tenant");
@@ -94,6 +94,7 @@ export class Box {
     if (options.config !== false) {
       mkdirSync(join(agent, "extensions", "subagent"), { recursive: true });
       cpSync(BOX_CONFIG, join(agent, "extensions", "subagent", "config.json"));
+      if (options.subagent !== undefined) writeFileSync(join(agent, "extensions", "subagent", "config.json"), JSON.stringify({ ...JSON.parse(readFileSync(BOX_CONFIG, "utf8")), ...options.subagent }));
     }
     if (options.replay === true) {
       mkdirSync(join(agent, "extensions"), { recursive: true });

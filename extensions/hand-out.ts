@@ -22,11 +22,11 @@ export const GO_ON =
   "When the seller wants more from a helper that has ended, continue that helper with `resume`, which keeps its card, its files and what it read; start a new helper only where it cannot be resumed.";
 
 /**
- * What a continuation costs: it sends the helper's earlier run again, which a model's provider may have kept for a few minutes after it
- * (pi's default, `short`), and keeps nothing for an unrelated task. A fact for cx, no rule: nothing times or closes a helper.
+ * What a continuation costs: it sends the helper's earlier run again, and a provider that still holds that input in its cache may charge
+ * less for it. How long a provider holds it is the provider's, so no time is named. A fact for cx, no rule: nothing times or closes a helper.
  */
 export const CACHE =
-  "Telling a helper more about the same work soon after it ends can read its earlier run from the model's cache, which costs less; later, the whole run is read again, and for unrelated work the cache saves nothing.";
+  "Telling a helper more about the same work reuses what it has already read, and input the model's provider still holds in its cache may cost less.";
 
 export function handOut(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {

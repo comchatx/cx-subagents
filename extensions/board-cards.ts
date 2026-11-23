@@ -1,5 +1,5 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmdirSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** pi-subagents' events for a background run, on the session's bus (`pi-subagents` `src/shared/types.js`). */
@@ -15,14 +15,6 @@ export const CONTINUE_PAUSED = "Go on with your task from where you paused.";
 
 /** The package's own tab on the person's board, declared in `package.json` (`comchatx.board`), and the folder its cards are in. */
 export const TAB = "帮手";
-/**
- * The folder beside the seller's own that holds each person's helpers' folders, one a helper, by the tab's name: `帮手/<person>/<start>/`
- * in cx's folder. A helper's runs share it, since a continued run reads the task that named it.
- */
-export const FOLDERS = TAB;
-/** What a new helper is told of its folder, after its task: where it is, that bought data stays where it lands, and that a place the task names wins. */
-export const ownFolder = (folder: string): string =>
-  `Your own folder for this work is \`${folder}/\`: put the files you make there, unless this task names another place for them, which then wins. Data bought with \`cx get\` stays where it lands; do not copy it into your folder.`;
 /** The environment the computer hands each person's pi, naming that person's board (`CX_PERSON_FACTS`). */
 export const PERSON_FACTS = "CX_PERSON_FACTS";
 const BOARD = "board";
@@ -103,32 +95,13 @@ function taskOf(input: Record<string, unknown>): string {
   return steps.join("\n\n");
 }
 
-/** A new folder for a helper of the person's, by its start's time, made now so a second helper started in the same second takes the next name. */
-function newFolder(tree: string, person: string, at: number): string {
-  const base = join(FOLDERS, person, stamp(at));
-  for (let n = 1; ; n++) {
-    const folder = n === 1 ? base : `${base}-${n}`;
-    try { mkdirSync(join(tree, FOLDERS, person), { recursive: true }); mkdirSync(join(tree, folder)); return folder; } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-  }
-}
-
-/** The call's task, or each step's, with the helper's folder said after it: the call is changed in place before it runs. */
-function toldFolder(input: Record<string, unknown>, folder: string): void {
-  const line = ownFolder(folder);
-  if (text(input["task"])?.trim()) input["task"] = `${input["task"] as string}\n\n${line}`;
-  for (const list of [input["tasks"], input["chain"]]) if (Array.isArray(list)) for (const step of list) {
-    const one = record(step);
-    if (text(one["task"])?.trim()) one["task"] = `${one["task"] as string}\n\n${line}`;
-  }
-}
-
 /** A helper's first name: the task's first line, at most 200 characters. The seller can change it on the card. */
 export const firstLine = (task: string): string => {
   const line = (task.split(/\r?\n/).find((one) => one.trim() !== "") ?? "").replace(/\s+/g, " ").trim();
   return line.length > NAME_MAX ? `${line.slice(0, NAME_MAX - 1)}…` : line;
 };
 
-const stamp = (ms: number): string => new Date(ms).toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+export const stamp = (ms: number): string => new Date(ms).toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 const idPart = (id: string): string => id.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
 const suffix = (id: string): string => `-subagent-${idPart(id)}.md`;
 const OURS = /-subagent-[A-Za-z0-9_-]+\.md$/;
@@ -603,10 +576,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const input = record(event.input);
     const from = text(input["id"]) ?? text(input["runId"]);
     if (input["action"] === "resume" && from !== undefined) resuming.set(event.toolCallId, { from, key: event.toolCallId });
-    const task = taskOf(input);
-    asked.set(event.toolCallId, task);
-    const person = personDir(cwd);
-    if (input["action"] === undefined && task !== "" && person !== undefined) toldFolder(input, newFolder(cwd, basename(person), now()));
+    asked.set(event.toolCallId, taskOf(input));
     running.add(event.toolCallId);
     for (const old of asked.keys()) if (asked.size > ASKED_KEPT) asked.delete(old);
   });

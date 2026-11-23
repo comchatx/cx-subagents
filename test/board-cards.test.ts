@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it } from "vitest";
-import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, FOLDERS, LISTS_MAX_BYTES, ownFolder, personDir, readCard, STARTED, STEPS_MAX_BYTES, stepsOf, TAB, withArrival, type Card } from "../extensions/board-cards.js";
+import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, LISTS_MAX_BYTES, personDir, readCard, STARTED, STEPS_MAX_BYTES, stepsOf, TAB, withArrival, type Card } from "../extensions/board-cards.js";
 
 const scratches: string[] = [];
 const sessions: (() => void)[] = [];
@@ -91,41 +91,17 @@ it("puts a helper in its own tab at its start: at work, the task's first line it
   expect(readdirSync(s.person)).toEqual([TAB]);
 });
 
-it("gives each new helper a folder of its own under the person's, made at the call and said after its task and each step's, the card keeping the task as asked", () => {
+it("leaves cx's call as asked, the card keeping the task: a helper's folder is said in the helper", () => {
   const s = session();
   s.start();
   const one = { agent: "helper", task: "Check the US titles." };
-  s.call("c1", one);
-  const folder = `${FOLDERS}/acct_1/20261105-093000`;
-  expect(one.task).toBe(`Check the US titles.\n\n${ownFolder(folder)}`);
-  expect(readdirSync(join(s.cwd, FOLDERS, "acct_1"))).toEqual(["20261105-093000"]);
-  // A second helper in the same second takes the next name; a parallel run's steps and a chain's are each told the run's one folder.
   const two = { tasks: [{ agent: "helper", task: "Price A." }, { agent: "helper", task: "Price B." }] };
+  s.call("c1", one);
   s.call("c2", two);
-  const chain = { chain: [{ agent: "helper", task: "Read." }, { agent: "helper", task: "" }] };
-  s.clock.at = T0 + 1000;
-  s.call("c3", chain);
-  expect(two.tasks.map((step) => step.task)).toEqual([`Price A.\n\n${ownFolder(`${folder}-2`)}`, `Price B.\n\n${ownFolder(`${folder}-2`)}`]);
-  expect(chain.chain.map((step) => step.task)).toEqual([`Read.\n\n${ownFolder(`${FOLDERS}/acct_1/20261105-093001`)}`, ""]);
+  expect([one, two]).toEqual([{ agent: "helper", task: "Check the US titles." }, { tasks: [{ agent: "helper", task: "Price A." }, { agent: "helper", task: "Price B." }] }]);
   s.started({ id: "run-1", toolCallId: "c1" });
-  expect(s.card("20261105-093001-subagent-run-1.md")?.task).toBe("Check the US titles.");
-  expect(ownFolder(folder)).toBe(`Your own folder for this work is \`${folder}/\`: put the files you make there, unless this task names another place for them, which then wins. Data bought with \`cx get\` stays where it lands; do not copy it into your folder.`);
-});
-
-it("leaves a continuation, an ask that starts no helper, and a session with no person's board without a folder", () => {
-  const s = session();
-  s.start();
-  const resume = { action: "resume", id: "run-1", message: "More of the same." };
-  const status = { action: "status", id: "run-1" };
-  s.call("c1", resume);
-  s.call("c2", status);
-  s.call("c3", { agent: "helper", task: "   " });
-  expect([resume, status]).toEqual([{ action: "resume", id: "run-1", message: "More of the same." }, { action: "status", id: "run-1" }]);
-  expect(existsSync(join(s.cwd, FOLDERS))).toBe(false);
-  const none = session([]);
-  const task = { agent: "helper", task: "Check." };
-  none.call("c1", task);
-  expect([task.task, existsSync(join(none.cwd, FOLDERS))]).toEqual(["Check.", false]);
+  expect(s.card("20261105-093000-subagent-run-1.md")?.task).toBe("Check the US titles.");
+  expect(readdirSync(s.cwd)).toEqual(["board"]);
 });
 
 it("gives each new helper the next face, one after the highest a card holds", () => {
