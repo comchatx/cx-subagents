@@ -33,7 +33,7 @@ it("lists no skill and loads its two extensions: the helpers' cards on pi's tool
 it("ships its extensions, its one helper and its page, names pi-subagents at the version it is tested with and cx-board for the Plugins page", () => {
   const packed = Object.values(JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: ROOT, encoding: "utf8" })) as Record<string, { files: { path: string }[] }>);
   expect(packed).toHaveLength(1);
-  expect(packed[0]!.files.map((file) => file.path).sort()).toEqual(["LICENSE", "README.md", "README.zh-CN.md", "agents/helper.md", "extensions/board-cards.ts", "extensions/hand-out.ts", "extensions/steps.ts", "package.json", "page/helpers.html"]);
+  expect(packed[0]!.files.map((file) => file.path).sort()).toEqual(["LICENSE", "README.md", "README.zh-CN.md", "agents/helper.md", "extensions/board-cards.ts", "extensions/hand-out.ts", "extensions/own-folder.ts", "extensions/steps.ts", "package.json", "page/helpers.html"]);
   const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { pi: unknown; "pi-subagents": unknown; dependencies?: unknown; peerDependencies?: unknown; devDependencies: Record<string, string>; comchatx: Record<string, unknown> };
   expect(manifest.pi).toEqual({ extensions: ["./extensions/board-cards.ts", "./extensions/hand-out.ts"] });
   expect(manifest["pi-subagents"]).toEqual({ agents: ["./agents"] });
@@ -49,12 +49,14 @@ it("ships its extensions, its one helper and its page, names pi-subagents at the
   expect([manifest.dependencies, manifest.peerDependencies]).toEqual([{ "@juicesharp/rpiv-todo": "2.15.0" }, undefined]);
 });
 
-it("loads rpiv-todo's `todo` tool in a helper alone: its helper names the steps file, which pi does not load for cx", async () => {
+it("loads rpiv-todo's `todo` tool and the helper's folder in a helper alone: its helper names both files, which pi does not load for cx", async () => {
   const helper = readFileSync(join(ROOT, "agents", "helper.md"), "utf8");
-  expect(/^subagentOnlyExtensions: (.*)$/m.exec(helper)?.[1]).toBe("../extensions/steps.ts");
+  expect(/^subagentOnlyExtensions: (.*)$/m.exec(helper)?.[1]).toBe("../extensions/steps.ts, ../extensions/own-folder.ts");
   expect(readFileSync(join(ROOT, "extensions", "steps.ts"), "utf8")).toMatch(/^export \{ default \} from "@juicesharp\/rpiv-todo";$/m);
   const { extensions } = await loaded();
   expect(extensions.extensions.flatMap((one) => [...one.tools.keys()])).not.toContain("todo");
+  // cx's own words pass as typed: only a helper's first prompt is told its folder.
+  expect(extensions.extensions.filter((one) => one.handlers.has("input"))).toEqual([]);
 });
 
 it("the comchatx field carries no description, which the Plugins page never draws: the card's Chinese line is about", () => {

@@ -91,6 +91,19 @@ it("puts a helper in its own tab at its start: at work, the task's first line it
   expect(readdirSync(s.person)).toEqual([TAB]);
 });
 
+it("leaves cx's call as asked, the card keeping the task: a helper's folder is said in the helper", () => {
+  const s = session();
+  s.start();
+  const one = { agent: "helper", task: "Check the US titles." };
+  const two = { tasks: [{ agent: "helper", task: "Price A." }, { agent: "helper", task: "Price B." }] };
+  s.call("c1", one);
+  s.call("c2", two);
+  expect([one, two]).toEqual([{ agent: "helper", task: "Check the US titles." }, { tasks: [{ agent: "helper", task: "Price A." }, { agent: "helper", task: "Price B." }] }]);
+  s.started({ id: "run-1", toolCallId: "c1" });
+  expect(s.card("20261105-093000-subagent-run-1.md")?.task).toBe("Check the US titles.");
+  expect(readdirSync(s.cwd)).toEqual(["board"]);
+});
+
 it("gives each new helper the next face, one after the highest a card holds", () => {
   const s = session();
   for (const [n, run] of ["run-a", "run-b", "run-c"].entries()) {

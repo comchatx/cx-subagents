@@ -101,7 +101,7 @@ export const firstLine = (task: string): string => {
   return line.length > NAME_MAX ? `${line.slice(0, NAME_MAX - 1)}…` : line;
 };
 
-const stamp = (ms: number): string => new Date(ms).toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+export const stamp = (ms: number): string => new Date(ms).toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 const idPart = (id: string): string => id.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
 const suffix = (id: string): string => `-subagent-${idPart(id)}.md`;
 const OURS = /-subagent-[A-Za-z0-9_-]+\.md$/;

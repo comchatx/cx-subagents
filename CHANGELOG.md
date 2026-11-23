@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0
+
+- Each new `helper` started fresh has a folder of its own, `帮手/<person>/<its start>/` beside the seller's folders in cx's folder, however cx starts it: one task, a parallel workflow or a chain, scripted or, with workflow scripts off, compiled by pi-subagents. The helper's own extension, `extensions/own-folder.ts`, makes the folder at the helper's first prompt and tells it there, once, where the folder is, that bought data stays where it lands, and that a place the task names wins. It still starts in cx's folder, so it loads the seller's plugins; a continued helper's session already holds that prompt, so it is told nothing again and keeps the same folder. cx's call and the card keep the task as cx asked it. A helper started with `context: "fork"`, and a child of another of pi-subagents' agents such as `worker`, gets a card and no folder; its files land where it writes them.
+- cx reads one more fact beside the `subagent` tool: telling a helper more about the same work reuses what it has already read, and input the model's provider still holds in its cache may cost less; and that a helper started with `context: "fork"` carries cx's conversation and is told no folder of its own. Nothing times or closes a helper.
+
 ## 0.7.1
 
 - The tile's mark on the Plugins page is the signed drawing.

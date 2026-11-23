@@ -21,10 +21,21 @@ export const TO_HELPER =
 export const GO_ON =
   "When the seller wants more from a helper that has ended, continue that helper with `resume`, which keeps its card, its files and what it read; start a new helper only where it cannot be resumed.";
 
+/**
+ * What a continuation costs: it sends the helper's earlier run again, and a provider that still holds that input in its cache may charge
+ * less for it. How long a provider holds it is the provider's, so no time is named. A fact for cx, no rule: nothing times or closes a helper.
+ */
+export const CACHE =
+  "Telling a helper more about the same work reuses what it has already read, and input the model's provider still holds in its cache may cost less.";
+
+/** A fork starts from cx's own conversation, so its first prompt is not its first, and the helper's folder is never said to it. A fact for cx, no rule. */
+export const FORK =
+  "A helper started with `context: \"fork\"` carries your conversation and is told no folder of its own.";
+
 export function handOut(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {
     const guidelines = event.systemPromptOptions.toolGuidelines ??= {};
-    guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT, TO_HELPER, GO_ON];
+    guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT, TO_HELPER, GO_ON, CACHE, FORK];
   });
 }
 
