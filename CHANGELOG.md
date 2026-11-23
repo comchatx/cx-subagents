@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0
+
+- Each new helper has a folder of its own, `帮手/<person>/<its start>/` beside the seller's folders in cx's folder, made when cx hands the work out. Its task is told where the folder is, that bought data stays where it lands, and that a place the task names wins. It still starts in cx's folder, so it loads the seller's plugins; a continued helper reads the same task, and so the same folder. The card keeps the task as cx asked it.
+- cx reads one more fact beside the `subagent` tool: telling a helper more about the same work soon after it ends can read its earlier run from the model's cache and costs less; later the whole run is read again, and for unrelated work the cache saves nothing. Nothing times or closes a helper.
+
 ## 0.7.1
 
 - The tile's mark on the Plugins page is the signed drawing.
