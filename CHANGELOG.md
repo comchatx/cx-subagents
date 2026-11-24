@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0
+
+- A helper that finished has, first among its card's files, the report pi-subagents keeps for its run: its result's `savedOutputPath`, else its `artifactPath` under the session folder. A helper paused, stopped or cut short adds none. pi-subagents deletes those reports after its `artifactConfig.cleanupDays`, seven days by default.
+- 参考资料 / References lists only the files a helper read in the seller's own tree, leaving out those under a folder whose name begins with a dot, such as the packages' skills under `.pi`; the web pages it fetched stay. A card with none draws no references.
+- A helper that goes on with `resume`, after a pause, a finish or a failure, keeps the steps its card held until it lists its steps again.
+- cx reads, beside the `subagent` tool, that more of the same work goes on with the helper that did it through `resume`: within minutes of its last step that is cheap, later it reads its whole earlier run again, and unrelated work starts a new helper. This sentence replaces the earlier one on the cache.
+
 ## 0.8.0
 
 - Each new `helper` started fresh has a folder of its own, `帮手/<person>/<its start>/` beside the seller's folders in cx's folder, however cx starts it: one task, a parallel workflow or a chain, scripted or, with workflow scripts off, compiled by pi-subagents. The helper's own extension, `extensions/own-folder.ts`, makes the folder at the helper's first prompt and tells it there, once, where the folder is, that bought data stays where it lands, and that a place the task names wins. It still starts in cx's folder, so it loads the seller's plugins; a continued helper's session already holds that prompt, so it is told nothing again and keeps the same folder. cx's call and the card keep the task as cx asked it. A helper started with `context: "fork"`, and a child of another of pi-subagents' agents such as `worker`, gets a card and no folder; its files land where it writes them.
