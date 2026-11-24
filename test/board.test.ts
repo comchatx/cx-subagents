@@ -74,6 +74,21 @@ it("puts a helper in its tab at work when it starts, the task's first line its n
   expect(readdirSync(join(tab, ".."))).toEqual([TAB]);
 }, 180_000);
 
+it("starts the helper, and a single run of another agent, with the largest limit upstream takes, so no clock stops them", async () => {
+  const { box, tab } = await boxWith((body, last) => {
+    if (firstUser(body).includes("NO-CLOCK")) return { role: "helper", answer: last.startsWith("[bash]") ? { parts: [{ text: "DONE" }] } : { parts: [{ functionCall: { name: "bash", args: { command: "sleep 3" } } }] } };
+    if (last.includes("Background task")) return { role: "parent", answer: { parts: [{ text: "PARENT-NOTED" }] } };
+    if (last.startsWith("[subagent]")) return { role: "parent", answer: { parts: [{ text: "PARENT-HANDED" }] } };
+    return { role: "parent", answer: { parts: [call({ agent: "helper", task: "NO-CLOCK: the helper" }), call({ task: "NO-CLOCK: another agent" })] } };
+  });
+  box.prompt("Check both.");
+  const both = await eventually(() => cards(tab), (list) => list.length === 2 && list.every((one) => one.dir !== undefined), 60_000);
+  const limitOf = (dir: string): unknown => { try { return JSON.parse(readFileSync(join(dir, "status.json"), "utf8")).timeoutMs; } catch { return undefined; } };
+  // The run's status, as pi-subagents writes it once its runner starts, says the limit the run carries.
+  const limits = await eventually(() => both.map((one) => [one.name, limitOf(one.dir!)]).sort(), (list) => list.every(([, limit]) => limit !== undefined), 30_000);
+  expect(limits).toEqual([["NO-CLOCK: another agent", 2_147_483_647], ["NO-CLOCK: the helper", 2_147_483_647]]);
+}, 120_000);
+
 it("ends a card at its time limit when pi-subagents stops the helper at its deadline", async () => {
   const { box, tab } = await boxWith((body, last) => {
     if (firstUser(body).includes("SLOW-TASK")) {

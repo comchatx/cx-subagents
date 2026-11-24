@@ -28,10 +28,28 @@ export const GO_ON =
 export const FORK =
   "A helper started with `context: \"fork\"` carries your conversation and is told no folder of its own.";
 
+/**
+ * No clock stops a helper: the largest `timeoutMs` pi-subagents takes, the longest a Node.js timer waits (about 24.8 days), as its author
+ * gives for a run with no practical deadline. `agents/helper.md` carries it in its frontmatter, which is what bounds a helper alone and
+ * a helper inside a chain, parallel tasks or a workflow; a single run of another of pi-subagents' agents gets it on cx's call. A fan-out
+ * has no deadline of its own, and its other agents' children keep theirs, which no call reaches. A limit cx names stays cx's.
+ */
+export const NO_CLOCK_MS = 2_147_483_647;
+
+/** A call that starts one run of an agent other than the helper: no `action`, no fan-out. */
+const startsOther = (input: Record<string, unknown>): boolean =>
+  input["action"] === undefined && typeof input["agent"] === "string" && input["agent"] !== "helper" && input["tasks"] === undefined && input["chain"] === undefined && input["workflow"] === undefined;
+
 export function handOut(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {
     const guidelines = event.systemPromptOptions.toolGuidelines ??= {};
     guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT, TO_HELPER, GO_ON, FORK];
+  });
+  pi.on("tool_call", (event) => {
+    if (event.toolName !== SUBAGENT_TOOL) return;
+    const input = event.input as Record<string, unknown>;
+    const named = [input, input["options"]].some((one) => typeof one === "object" && one !== null && ("timeoutMs" in one || "maxRuntimeMs" in one));
+    if (startsOther(input) && !named) input["timeoutMs"] = NO_CLOCK_MS;
   });
 }
 

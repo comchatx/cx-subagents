@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { expect, it } from "vitest";
-import handOutDefault, { FORK, GO_ON, HAND_OUT, SUBAGENT_TOOL, TO_HELPER } from "../extensions/hand-out.js";
+import handOutDefault, { FORK, GO_ON, HAND_OUT, NO_CLOCK_MS, SUBAGENT_TOOL, TO_HELPER } from "../extensions/hand-out.js";
 
 type Options = { toolGuidelines?: Record<string, string[]> };
 
@@ -36,4 +36,25 @@ it("tells cx Jack's ruling whole, as a fact: the same work goes on with the same
 it("tells cx as a fact that a forked helper carries its conversation and is told no folder of its own; no rule", () => {
   expect(FORK).toBe("A helper started with `context: \"fork\"` carries your conversation and is told no folder of its own.");
   expect(FORK).not.toMatch(/must|always|never|do not|don't|avoid/i);
+});
+
+/** cx's `subagent` call as pi's runner hands it to the package before upstream reads it. */
+function called(input: Record<string, unknown>, toolName = SUBAGENT_TOOL): Record<string, unknown> {
+  let handler: ((event: { toolName: string; input: Record<string, unknown> }) => unknown) | undefined;
+  const pi = { on: (name: string, given: typeof handler) => { if (name === "tool_call") handler = given; } } as unknown as ExtensionAPI;
+  handOutDefault(pi);
+  handler!({ toolName, input });
+  return input;
+}
+
+it("gives a single run of another of pi-subagents' agents the largest limit upstream takes, where cx names none", () => {
+  expect(NO_CLOCK_MS).toBe(2_147_483_647);
+  expect(called({ agent: "delegate", task: "t" })).toEqual({ agent: "delegate", task: "t", timeoutMs: NO_CLOCK_MS });
+  // The helper carries it in its own frontmatter, which also reaches it inside a fan-out.
+  expect(called({ agent: "helper", task: "t" })).toEqual({ agent: "helper", task: "t" });
+  // A fan-out has no deadline of its own, a resume none as today, and a limit cx names stays cx's.
+  for (const input of [{ tasks: [{ agent: "delegate", task: "t" }] }, { chain: [{ agent: "delegate", task: "t" }] }, { agent: "delegate", workflow: true }, { action: "resume", id: "r", message: "m" }, { action: "status" }, { agent: "delegate", task: "t", timeoutMs: 60_000 }, { agent: "delegate", task: "t", maxRuntimeMs: 60_000 }, { agent: "delegate", task: "t", options: { timeoutMs: 60_000 } }]) {
+    expect(called(structuredClone(input))).toEqual(input);
+  }
+  expect(called({ agent: "delegate", task: "t" }, "bash")).toEqual({ agent: "delegate", task: "t" });
 });
