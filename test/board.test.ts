@@ -89,6 +89,23 @@ it("starts the helper, and a single run of another agent, with the largest limit
   expect(limits).toEqual([["NO-CLOCK: another agent", 2_147_483_647], ["NO-CLOCK: the helper", 2_147_483_647]]);
 }, 120_000);
 
+it("gives cx a turn when upstream's notice says a helper needs attention, which is what tells cx in place of a clock", async () => {
+  const { box, model } = await boxWith((body, last) => {
+    if (firstUser(body).includes("HELD-TASK")) return { role: "helper", answer: last.startsWith("[bash]") ? { parts: [{ text: "DONE" }] } : { parts: [{ functionCall: { name: "bash", args: { command: "sleep 20" } } }] } };
+    if (last.includes("Subagent needs attention")) return { role: "parent", answer: { parts: [{ text: "PARENT-SAW-ATTENTION" }] } };
+    if (last.includes("Background task")) return { role: "parent", answer: { parts: [{ text: "PARENT-NOTED" }] } };
+    if (last.startsWith("[subagent]")) return { role: "parent", answer: { parts: [{ text: "PARENT-HANDED" }] } };
+    // Upstream's thresholds made small for this call alone: a tool call open a second raises its notice, as one open four minutes does by default.
+    return { role: "parent", answer: { parts: [call({ task: "HELD-TASK: hold one command open", control: { activeNoticeAfterMs: 1_000 } })] } };
+  });
+  box.prompt("Hold one command open.");
+  await box.until(said("PARENT-HANDED"), 60_000);
+  await box.until(said("PARENT-SAW-ATTENTION"), 30_000);
+  const turn = model.asked.find((one) => one.role === "parent" && one.last.includes("Subagent needs attention"))!;
+  expect(turn.last).toMatch(/Run: [0-9a-f-]{36}/);
+  expect(model.asked.some((one) => one.last.startsWith("[bash]"))).toBe(false);
+}, 120_000);
+
 it("ends a card at its time limit when pi-subagents stops the helper at its deadline", async () => {
   const { box, tab } = await boxWith((body, last) => {
     if (firstUser(body).includes("SLOW-TASK")) {
