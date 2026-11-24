@@ -87,6 +87,7 @@ it("starts the helper, and a single run of another agent, with the largest limit
   // The run's status, as pi-subagents writes it once its runner starts, says the limit the run carries.
   const limits = await eventually(() => both.map((one) => [one.name, limitOf(one.dir!)]).sort(), (list) => list.every(([, limit]) => limit !== undefined), 30_000);
   expect(limits).toEqual([["NO-CLOCK: another agent", 2_147_483_647], ["NO-CLOCK: the helper", 2_147_483_647]]);
+  await eventually(() => cards(tab), (list) => list.every((one) => one.state === "done"), 60_000);
 }, 120_000);
 
 it("gives cx a turn when upstream's notice says a helper needs attention, which is what tells cx in place of a clock", async () => {

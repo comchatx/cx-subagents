@@ -2,6 +2,7 @@
 
 ## 0.9.0
 
+- No clock stops a helper. The helper, and a single run of another agent cx starts, carry the largest `timeoutMs` pi-subagents takes, about 24.8 days. The helper's frontmatter carries it, and so does cx's call where cx names none. pi-subagents' own "needs attention" notice gives cx a turn when a helper holds a tool call open. The README no longer says a helper stops at 30 minutes.
 - A helper that finished has, first among its card's files, the report pi-subagents keeps for its run: its result's `savedOutputPath`, else its `artifactPath` under the session folder. A helper paused, stopped or cut short adds none. pi-subagents deletes those reports after its `artifactConfig.cleanupDays`, seven days by default.
 - 参考资料 / References lists only the files a helper read in the seller's own tree, leaving out those under a folder whose name begins with a dot, such as the packages' skills under `.pi`; the web pages it fetched stay. A card with none draws no references.
 - A helper that goes on with `resume`, after a pause, a finish or a failure, keeps the steps its card held until it lists its steps again.
