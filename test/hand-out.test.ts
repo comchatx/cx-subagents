@@ -57,4 +57,7 @@ it("gives a single run of another of pi-subagents' agents the largest limit upst
     expect(called(structuredClone(input))).toEqual(input);
   }
   expect(called({ agent: "delegate", task: "t" }, "bash")).toEqual({ agent: "delegate", task: "t" });
+  // A field pi-subagents reads as not given, as some models fill each unset one, is not given here either.
+  expect(called({ agent: "delegate", task: "t", options: { timeoutMs: "null" } })).toEqual({ agent: "delegate", task: "t", options: { timeoutMs: "null" }, timeoutMs: NO_CLOCK_MS });
+  expect(called({ agent: "delegate", task: "t", timeoutMs: "null", maxRuntimeMs: "null", action: "null", tasks: "null", chain: "null", workflow: "false" })).toMatchObject({ timeoutMs: NO_CLOCK_MS });
 });

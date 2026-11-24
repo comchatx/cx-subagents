@@ -36,9 +36,20 @@ export const FORK =
  */
 export const NO_CLOCK_MS = 2_147_483_647;
 
+/**
+ * A field of cx's call as pi-subagents reads it after this hook: a value of `"null"`, and a `workflow` of `"false"`, it reads as not
+ * given, since some models fill each unset field so (`flattenSubagentToolOptions`, `src/extension/subagent-options.js:16–19` in
+ * 0.89.1, not exported by the package, so its one rule is mirrored here).
+ */
+const given = (bag: unknown, key: string): boolean => {
+  if (typeof bag !== "object" || bag === null || Array.isArray(bag)) return false;
+  const value = (bag as Record<string, unknown>)[key];
+  return value !== undefined && value !== "null" && !(key === "workflow" && value === "false");
+};
+
 /** A call that starts one run of an agent other than the helper: no `action`, no fan-out. */
 const startsOther = (input: Record<string, unknown>): boolean =>
-  input["action"] === undefined && typeof input["agent"] === "string" && input["agent"] !== "helper" && input["tasks"] === undefined && input["chain"] === undefined && input["workflow"] === undefined;
+  !given(input, "action") && given(input, "agent") && input["agent"] !== "helper" && !given(input, "tasks") && !given(input, "chain") && !given(input, "workflow");
 
 export function handOut(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {
@@ -48,7 +59,7 @@ export function handOut(pi: ExtensionAPI): void {
   pi.on("tool_call", (event) => {
     if (event.toolName !== SUBAGENT_TOOL) return;
     const input = event.input as Record<string, unknown>;
-    const named = [input, input["options"]].some((one) => typeof one === "object" && one !== null && ("timeoutMs" in one || "maxRuntimeMs" in one));
+    const named = [input, input["options"]].some((bag) => given(bag, "timeoutMs") || given(bag, "maxRuntimeMs"));
     if (startsOther(input) && !named) input["timeoutMs"] = NO_CLOCK_MS;
   });
 }

@@ -467,6 +467,8 @@ it("names a file by its path in cx's folder, and lists none outside it nor any a
   expect(arrival("read", { path: "../etc/passwd" }, "/tenant")).toEqual({ files: [], reads: [] });
   // What pi and the packages keep in the tree is not the seller's: a skill, its references, a session's files.
   expect(arrival("read", { path: "/tenant/.pi/npm/node_modules/cx-amazon-ads/skills/amazon-ads/SKILL.md" }, "/tenant")).toEqual({ files: [], reads: [] });
+  // The rule is the folder: a file of the seller's own whose name begins with a dot is theirs.
+  expect(arrival("read", { path: "/tenant/report/.columns.json" }, "/tenant")).toEqual({ files: [], reads: ["report/.columns.json"] });
   expect(arrival("read", { path: "notes/.cache/door.md" }, "/tenant")).toEqual({ files: [], reads: [] });
   expect(arrival("read", { path: ".pi/sessions/subagent-artifacts/run_output.md" }, "/tenant")).toEqual({ files: [], reads: [] });
   expect(arrival("write", { path: ".drafts/a.md" }, "/tenant")).toEqual({ files: [".drafts/a.md"], reads: [] });

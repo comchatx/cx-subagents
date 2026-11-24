@@ -74,12 +74,12 @@ it("puts a helper in its tab at work when it starts, the task's first line its n
   expect(readdirSync(join(tab, ".."))).toEqual([TAB]);
 }, 180_000);
 
-it("starts the helper, and a single run of another agent, with the largest limit upstream takes, so no clock stops them", async () => {
+it("starts the helper, and a single run of another agent with its limit written as not set, with the largest limit upstream takes, so no clock stops them", async () => {
   const { box, tab } = await boxWith((body, last) => {
     if (firstUser(body).includes("NO-CLOCK")) return { role: "helper", answer: last.startsWith("[bash]") ? { parts: [{ text: "DONE" }] } : { parts: [{ functionCall: { name: "bash", args: { command: "sleep 3" } } }] } };
     if (last.includes("Background task")) return { role: "parent", answer: { parts: [{ text: "PARENT-NOTED" }] } };
     if (last.startsWith("[subagent]")) return { role: "parent", answer: { parts: [{ text: "PARENT-HANDED" }] } };
-    return { role: "parent", answer: { parts: [call({ agent: "helper", task: "NO-CLOCK: the helper" }), call({ task: "NO-CLOCK: another agent" })] } };
+    return { role: "parent", answer: { parts: [call({ agent: "helper", task: "NO-CLOCK: the helper" }), call({ task: "NO-CLOCK: another agent", options: { timeoutMs: "null" } })] } };
   });
   box.prompt("Check both.");
   const both = await eventually(() => cards(tab), (list) => list.length === 2 && list.every((one) => one.dir !== undefined), 60_000);
