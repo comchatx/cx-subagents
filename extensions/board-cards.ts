@@ -1,5 +1,5 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmdirSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** pi-subagents' events for a background run, on the session's bus (`pi-subagents` `src/shared/types.js`). */
@@ -299,7 +299,8 @@ const asksCx = (name: unknown, args: unknown): boolean => {
 /**
  * What one of the four tools a card lists hands it when the call ends well: `write` and `edit` a file it wrote, `read` a file it read,
  * `fetch_content` the pages it read (`url`, or each of `urls`). A file is named by its path in cx's folder (`tree`), the folder the board
- * opens files from, a relative path read against it; a file outside it is no file the board can show and is not listed.
+ * opens files from, a relative path read against it; a file outside it is no file the board can show and is not listed. A file read in a
+ * folder whose name begins with a dot, pi's and the packages' own (`.pi/npm`, the sessions), is not the seller's and is not listed either.
  */
 export function arrival(tool: unknown, args: unknown, tree: string): { readonly files: readonly string[]; readonly reads: readonly string[] } {
   const call = record(args);
@@ -309,7 +310,7 @@ export function arrival(tool: unknown, args: unknown, tree: string): { readonly 
     return at === "" || at.startsWith("..") || isAbsolute(at) ? [] : [at];
   };
   if (tool === "write" || tool === "edit") return { files: inTree(call["path"]), reads: [] };
-  if (tool === "read") return { files: [], reads: inTree(call["path"]) };
+  if (tool === "read") return { files: [], reads: inTree(call["path"]).filter((at) => !at.split(sep).some((part) => part.startsWith("."))) };
   if (tool === "fetch_content") {
     const pages = [call["url"], ...(Array.isArray(call["urls"]) ? call["urls"] : [])].filter((one): one is string => typeof one === "string" && /^https?:\/\/\S+$/i.test(one.trim())).map((one) => one.trim());
     return { files: [], reads: pages };

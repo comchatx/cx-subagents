@@ -465,6 +465,11 @@ it("names a file by its path in cx's folder, and lists none outside it nor any a
   expect(arrival("edit", { path: "/tenant/a/../c.md" }, "/tenant")).toEqual({ files: ["c.md"], reads: [] });
   expect(arrival("read", { path: "@notes/x.md" }, "/tenant")).toEqual({ files: [], reads: ["notes/x.md"] });
   expect(arrival("read", { path: "../etc/passwd" }, "/tenant")).toEqual({ files: [], reads: [] });
+  // What pi and the packages keep in the tree is not the seller's: a skill, its references, a session's files.
+  expect(arrival("read", { path: "/tenant/.pi/npm/node_modules/cx-amazon-ads/skills/amazon-ads/SKILL.md" }, "/tenant")).toEqual({ files: [], reads: [] });
+  expect(arrival("read", { path: "notes/.cache/door.md" }, "/tenant")).toEqual({ files: [], reads: [] });
+  expect(arrival("read", { path: ".pi/sessions/subagent-artifacts/run_output.md" }, "/tenant")).toEqual({ files: [], reads: [] });
+  expect(arrival("write", { path: ".drafts/a.md" }, "/tenant")).toEqual({ files: [".drafts/a.md"], reads: [] });
   expect(arrival("write", { path: "/tenant" }, "/tenant")).toEqual({ files: [], reads: [] });
   expect(arrival("fetch_content", { url: " https://a.example/x ", urls: ["file:///etc/hosts", "http://b.example", 4] }, "/tenant")).toEqual({ files: [], reads: ["https://a.example/x", "http://b.example"] });
   expect(arrival("bash", { command: "ls" }, "/tenant")).toEqual({ files: [], reads: [] });
