@@ -579,7 +579,7 @@ it("tells cx the run of the card a seller's message was written on, read from th
   ]);
 });
 
-it("shows no steps on a done or failed helper continued until it lists its steps again, and keeps a paused one's", async () => {
+it("keeps a helper's steps when it goes on, paused, done or failed, until it lists its steps again", async () => {
   for (const ended of ["done", "failed", "paused"] as const) {
     const s = session();
     s.start();
@@ -589,7 +589,7 @@ it("shows no steps on a done or failed helper continued until it lists its steps
     s.call("c2", { action: "resume", id: "run-1", message: "go on" });
     const run = runDir(s.cwd, "run-2");
     s.started({ id: "run-2", asyncDir: run.dir });
-    expect([ended, s.card(file)?.state, s.card(file)?.run, s.card(file)?.steps]).toEqual([ended, "working", "run-2", ended === "paused" ? [{ words: "Read", state: "done" }, { words: "Write", state: "now" }] : undefined]);
+    expect([ended, s.card(file)?.state, s.card(file)?.run, s.card(file)?.steps]).toEqual([ended, "working", "run-2", [{ words: "Read", state: "done" }, { words: "Write", state: "now" }]]);
     run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "todo", args: {} });
     run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "todo", result: todo([{ id: 1, subject: "Add Japan", status: "in_progress" }]), isError: false });
     expect(await eventually(() => s.card(file)?.steps, (steps) => steps?.length === 1)).toEqual([{ words: "Add Japan", state: "now" }]);
