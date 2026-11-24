@@ -340,18 +340,19 @@ export function stepsOf(result: unknown): readonly Step[] | undefined {
   return steps;
 }
 
-/** A card with what arrived added at the ends of its lists, each once, while both lists stay within `LISTS_MAX_BYTES`. */
 /**
- * The report pi-subagents keeps for a run, as its result names it, first among the card's files: what the helper made for the seller.
- * A call's `output` would put it elsewhere, but rewrites the helper's task with that path as the one that wins, over a place the task names.
+ * The report pi-subagents keeps for a run that finished, as its result names it, first among the card's files: what the helper made for
+ * the seller. A run paused, stopped or cut short made none; its card keeps its files as they were. A call's `output` would put the report
+ * elsewhere, but rewrites the helper's task with that path as the one that wins, over a place the task names.
  */
 export function withReport(files: readonly string[] | undefined, event: Record<string, unknown>, tree: string): { files?: string[] } {
-  const results = Array.isArray(event["results"]) ? event["results"].map(record) : [];
+  const results = endState(event) === "done" && Array.isArray(event["results"]) ? event["results"].map(record) : [];
   const reports = results.flatMap((one) => arrival("write", { path: text(one["savedOutputPath"]) ?? text(one["artifactPath"]) }, tree).files);
   const all = [...new Set([...reports, ...(files ?? [])])];
   return all.length === 0 ? {} : { files: all };
 }
 
+/** A card with what arrived added at the ends of its lists, each once, while both lists stay within `LISTS_MAX_BYTES`. */
 export function withArrival(card: Card, came: { readonly files: readonly string[]; readonly reads: readonly string[] }): Card {
   const files = [...(card.files ?? [])];
   const reads = [...(card.reads ?? [])];

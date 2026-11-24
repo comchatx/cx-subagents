@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it } from "vitest";
-import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, LISTS_MAX_BYTES, personDir, readCard, STARTED, STEPS_MAX_BYTES, stepsOf, TAB, withArrival, type Card } from "../extensions/board-cards.js";
+import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, LISTS_MAX_BYTES, personDir, readCard, STARTED, STEPS_MAX_BYTES, stepsOf, TAB, withArrival, withReport, type Card } from "../extensions/board-cards.js";
 
 const scratches: string[] = [];
 const sessions: (() => void)[] = [];
@@ -493,6 +493,16 @@ it("loads as pi loads it: the default export takes pi's events", () => {
 });
 
 const todo = (tasks: unknown[], more: Record<string, unknown> = {}) => ({ content: [{ type: "text", text: "ok" }], details: { action: "update", params: {}, tasks, nextId: tasks.length + 1, ...more } });
+
+it("puts the report pi-subagents keeps first among a finished run's files, and none on a run paused, stopped or cut short", () => {
+  const results = [{ artifactPath: "/tenant/.pi/sessions/subagent-artifacts/run-1_helper_output.md" }];
+  const report = ".pi/sessions/subagent-artifacts/run-1_helper_output.md";
+  expect(withReport(["notes.md"], { state: "complete", results }, "/tenant")).toEqual({ files: [report, "notes.md"] });
+  expect(withReport([report], { state: "complete", results }, "/tenant")).toEqual({ files: [report] });
+  expect(withReport(undefined, { state: "complete", results: [{ savedOutputPath: "/tenant/out/brief.md", artifactPath: "/tenant/.pi/x.md" }] }, "/tenant")).toEqual({ files: ["out/brief.md"] });
+  for (const state of ["paused", "stopped", "failed"]) expect(withReport(["notes.md"], { state, results }, "/tenant")).toEqual({ files: ["notes.md"] });
+  expect(withReport(undefined, { state: "complete", timedOut: true, results }, "/tenant")).toEqual({});
+});
 
 it("reads a helper's steps from rpiv-todo's whole list, in its order: done, in work, not started; a deleted or empty one left out", () => {
   expect(stepsOf(todo([
