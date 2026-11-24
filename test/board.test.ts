@@ -68,8 +68,44 @@ it("puts a helper in its tab at work when it starts, the task's first line its n
   expect(ended).toMatchObject({ file: started!.file, name: started!.name, face: 0, at: started!.at, task: TASK });
   expect(ended!.took).toBeGreaterThanOrEqual(4);
   expect(ended!.ended).toBeGreaterThan(ended!.at);
+  // The report pi-subagents keeps for the run is the card's first file, where the seller's tree holds it.
+  expect(ended!.files![0]).toMatch(/^\.pi\/sessions\/subagent-artifacts\/[^/]+_output\.md$/);
+  expect(readFileSync(join(box.home, "tenant", ended!.files![0]!), "utf8")).toContain("CHILD-RESULT");
   expect(readdirSync(join(tab, ".."))).toEqual([TAB]);
 }, 180_000);
+
+it("starts the helper, and a single run of another agent with its limit written as not set, with the largest limit upstream takes, so no clock stops them", async () => {
+  const { box, tab } = await boxWith((body, last) => {
+    if (firstUser(body).includes("NO-CLOCK")) return { role: "helper", answer: last.startsWith("[bash]") ? { parts: [{ text: "DONE" }] } : { parts: [{ functionCall: { name: "bash", args: { command: "sleep 3" } } }] } };
+    if (last.includes("Background task")) return { role: "parent", answer: { parts: [{ text: "PARENT-NOTED" }] } };
+    if (last.startsWith("[subagent]")) return { role: "parent", answer: { parts: [{ text: "PARENT-HANDED" }] } };
+    return { role: "parent", answer: { parts: [call({ agent: "helper", task: "NO-CLOCK: the helper" }), call({ task: "NO-CLOCK: another agent", options: { timeoutMs: "null" } })] } };
+  });
+  box.prompt("Check both.");
+  const both = await eventually(() => cards(tab), (list) => list.length === 2 && list.every((one) => one.dir !== undefined), 60_000);
+  const limitOf = (dir: string): unknown => { try { return JSON.parse(readFileSync(join(dir, "status.json"), "utf8")).timeoutMs; } catch { return undefined; } };
+  // The run's status, as pi-subagents writes it once its runner starts, says the limit the run carries.
+  const limits = await eventually(() => both.map((one) => [one.name, limitOf(one.dir!)]).sort(), (list) => list.every(([, limit]) => limit !== undefined), 30_000);
+  expect(limits).toEqual([["NO-CLOCK: another agent", 2_147_483_647], ["NO-CLOCK: the helper", 2_147_483_647]]);
+  await eventually(() => cards(tab), (list) => list.every((one) => one.state === "done"), 60_000);
+}, 120_000);
+
+it("gives cx a turn when upstream's notice says a helper needs attention, which is what tells cx in place of a clock", async () => {
+  const { box, model } = await boxWith((body, last) => {
+    if (firstUser(body).includes("HELD-TASK")) return { role: "helper", answer: last.startsWith("[bash]") ? { parts: [{ text: "DONE" }] } : { parts: [{ functionCall: { name: "bash", args: { command: "sleep 20" } } }] } };
+    if (last.includes("Subagent needs attention")) return { role: "parent", answer: { parts: [{ text: "PARENT-SAW-ATTENTION" }] } };
+    if (last.includes("Background task")) return { role: "parent", answer: { parts: [{ text: "PARENT-NOTED" }] } };
+    if (last.startsWith("[subagent]")) return { role: "parent", answer: { parts: [{ text: "PARENT-HANDED" }] } };
+    // Upstream's thresholds made small for this call alone: a tool call open a second raises its notice, as one open four minutes does by default.
+    return { role: "parent", answer: { parts: [call({ task: "HELD-TASK: hold one command open", control: { activeNoticeAfterMs: 1_000 } })] } };
+  });
+  box.prompt("Hold one command open.");
+  await box.until(said("PARENT-HANDED"), 60_000);
+  await box.until(said("PARENT-SAW-ATTENTION"), 30_000);
+  const turn = model.asked.find((one) => one.role === "parent" && one.last.includes("Subagent needs attention"))!;
+  expect(turn.last).toMatch(/Run: [0-9a-f-]{36}/);
+  expect(model.asked.some((one) => one.last.startsWith("[bash]"))).toBe(false);
+}, 120_000);
 
 it("ends a card at its time limit when pi-subagents stops the helper at its deadline", async () => {
   const { box, tab } = await boxWith((body, last) => {

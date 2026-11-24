@@ -1,4 +1,4 @@
-cx can hand work that takes time to a helper in the background, while you and cx keep talking. Each job gets a card under Helpers on the board, with the helper's name and what it is doing now; when it is done, cx tells you the result in the conversation. A helper still working after 30 minutes stops, and its card says so. Useful for checking many products at once or running a large comparison.
+cx can hand work that takes time to a helper in the background, while you and cx keep talking. Each job gets a card under Helpers on the board, with the helper's name and what it is doing now; when it is done, cx tells you the result in the conversation. Useful for checking many products at once or running a large comparison.
 
 A card does not list files a helper writes with a command, pages a command fetches, or data bought with cx get; what the data cost is listed in Settings › Usage.
 

@@ -76,7 +76,8 @@ it("pauses a helper at the card's press, lets it go on on the same card, its fil
   expect(again.ended).toBeUndefined();
   const [done, ...more] = await eventually(() => cards(tab), (list) => list[0]?.state === "done", 60_000);
   expect(more).toEqual([]);
-  expect(done).toMatchObject({ file: first!.file, run: again.run, files: ["notes.md"] });
+  // Finished, the card's first file is the report pi-subagents keeps for the run that finished it; paused, it had none.
+  expect(done).toMatchObject({ file: first!.file, run: again.run, files: [`.pi/sessions/subagent-artifacts/${again.run}_delegate_output.md`, "notes.md"] });
   expect(model.asked.some((one) => one.role === "helper-again")).toBe(true);
 }, 180_000);
 

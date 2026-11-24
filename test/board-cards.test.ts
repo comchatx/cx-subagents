@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it } from "vitest";
-import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, LISTS_MAX_BYTES, personDir, readCard, STARTED, STEPS_MAX_BYTES, stepsOf, TAB, withArrival, type Card } from "../extensions/board-cards.js";
+import boardCardsDefault, { arrival, boardCards, CARD_MAX_BYTES, cardText, COMPLETE, endState, LISTS_MAX_BYTES, personDir, readCard, STARTED, STEPS_MAX_BYTES, stepsOf, TAB, withArrival, withReport, type Card } from "../extensions/board-cards.js";
 
 const scratches: string[] = [];
 const sessions: (() => void)[] = [];
@@ -465,6 +465,13 @@ it("names a file by its path in cx's folder, and lists none outside it nor any a
   expect(arrival("edit", { path: "/tenant/a/../c.md" }, "/tenant")).toEqual({ files: ["c.md"], reads: [] });
   expect(arrival("read", { path: "@notes/x.md" }, "/tenant")).toEqual({ files: [], reads: ["notes/x.md"] });
   expect(arrival("read", { path: "../etc/passwd" }, "/tenant")).toEqual({ files: [], reads: [] });
+  // What pi and the packages keep in the tree is not the seller's: a skill, its references, a session's files.
+  expect(arrival("read", { path: "/tenant/.pi/npm/node_modules/cx-amazon-ads/skills/amazon-ads/SKILL.md" }, "/tenant")).toEqual({ files: [], reads: [] });
+  // The rule is the folder: a file of the seller's own whose name begins with a dot is theirs.
+  expect(arrival("read", { path: "/tenant/report/.columns.json" }, "/tenant")).toEqual({ files: [], reads: ["report/.columns.json"] });
+  expect(arrival("read", { path: "notes/.cache/door.md" }, "/tenant")).toEqual({ files: [], reads: [] });
+  expect(arrival("read", { path: ".pi/sessions/subagent-artifacts/run_output.md" }, "/tenant")).toEqual({ files: [], reads: [] });
+  expect(arrival("write", { path: ".drafts/a.md" }, "/tenant")).toEqual({ files: [".drafts/a.md"], reads: [] });
   expect(arrival("write", { path: "/tenant" }, "/tenant")).toEqual({ files: [], reads: [] });
   expect(arrival("fetch_content", { url: " https://a.example/x ", urls: ["file:///etc/hosts", "http://b.example", 4] }, "/tenant")).toEqual({ files: [], reads: ["https://a.example/x", "http://b.example"] });
   expect(arrival("bash", { command: "ls" }, "/tenant")).toEqual({ files: [], reads: [] });
@@ -488,6 +495,16 @@ it("loads as pi loads it: the default export takes pi's events", () => {
 });
 
 const todo = (tasks: unknown[], more: Record<string, unknown> = {}) => ({ content: [{ type: "text", text: "ok" }], details: { action: "update", params: {}, tasks, nextId: tasks.length + 1, ...more } });
+
+it("puts the report pi-subagents keeps first among a finished run's files, and none on a run paused, stopped or cut short", () => {
+  const results = [{ artifactPath: "/tenant/.pi/sessions/subagent-artifacts/run-1_helper_output.md" }];
+  const report = ".pi/sessions/subagent-artifacts/run-1_helper_output.md";
+  expect(withReport(["notes.md"], { state: "complete", results }, "/tenant")).toEqual({ files: [report, "notes.md"] });
+  expect(withReport([report], { state: "complete", results }, "/tenant")).toEqual({ files: [report] });
+  expect(withReport(undefined, { state: "complete", results: [{ savedOutputPath: "/tenant/out/brief.md", artifactPath: "/tenant/.pi/x.md" }] }, "/tenant")).toEqual({ files: ["out/brief.md"] });
+  for (const state of ["paused", "stopped", "failed"]) expect(withReport(["notes.md"], { state, results }, "/tenant")).toEqual({ files: ["notes.md"] });
+  expect(withReport(undefined, { state: "complete", timedOut: true, results }, "/tenant")).toEqual({});
+});
 
 it("reads a helper's steps from rpiv-todo's whole list, in its order: done, in work, not started; a deleted or empty one left out", () => {
   expect(stepsOf(todo([
@@ -574,7 +591,7 @@ it("tells cx the run of the card a seller's message was written on, read from th
   ]);
 });
 
-it("shows no steps on a done or failed helper continued until it lists its steps again, and keeps a paused one's", async () => {
+it("keeps a helper's steps when it goes on, paused, done or failed, until it lists its steps again", async () => {
   for (const ended of ["done", "failed", "paused"] as const) {
     const s = session();
     s.start();
@@ -584,7 +601,7 @@ it("shows no steps on a done or failed helper continued until it lists its steps
     s.call("c2", { action: "resume", id: "run-1", message: "go on" });
     const run = runDir(s.cwd, "run-2");
     s.started({ id: "run-2", asyncDir: run.dir });
-    expect([ended, s.card(file)?.state, s.card(file)?.run, s.card(file)?.steps]).toEqual([ended, "working", "run-2", ended === "paused" ? [{ words: "Read", state: "done" }, { words: "Write", state: "now" }] : undefined]);
+    expect([ended, s.card(file)?.state, s.card(file)?.run, s.card(file)?.steps]).toEqual([ended, "working", "run-2", [{ words: "Read", state: "done" }, { words: "Write", state: "now" }]]);
     run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "todo", args: {} });
     run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "todo", result: todo([{ id: 1, subject: "Add Japan", status: "in_progress" }]), isError: false });
     expect(await eventually(() => s.card(file)?.steps, (steps) => steps?.length === 1)).toEqual([{ words: "Add Japan", state: "now" }]);

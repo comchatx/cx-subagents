@@ -1,5 +1,5 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmdirSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** pi-subagents' events for a background run, on the session's bus (`pi-subagents` `src/shared/types.js`). */
@@ -299,7 +299,9 @@ const asksCx = (name: unknown, args: unknown): boolean => {
 /**
  * What one of the four tools a card lists hands it when the call ends well: `write` and `edit` a file it wrote, `read` a file it read,
  * `fetch_content` the pages it read (`url`, or each of `urls`). A file is named by its path in cx's folder (`tree`), the folder the board
- * opens files from, a relative path read against it; a file outside it is no file the board can show and is not listed.
+ * opens files from, a relative path read against it; a file outside it is no file the board can show and is not listed. A file read in a
+ * folder whose name begins with a dot, pi's and the packages' own (`.pi/npm`, the sessions), is not the seller's and is not listed either;
+ * a file of the seller's whose own name begins with a dot is.
  */
 export function arrival(tool: unknown, args: unknown, tree: string): { readonly files: readonly string[]; readonly reads: readonly string[] } {
   const call = record(args);
@@ -309,7 +311,7 @@ export function arrival(tool: unknown, args: unknown, tree: string): { readonly 
     return at === "" || at.startsWith("..") || isAbsolute(at) ? [] : [at];
   };
   if (tool === "write" || tool === "edit") return { files: inTree(call["path"]), reads: [] };
-  if (tool === "read") return { files: [], reads: inTree(call["path"]) };
+  if (tool === "read") return { files: [], reads: inTree(call["path"]).filter((at) => !at.split(sep).slice(0, -1).some((part) => part.startsWith("."))) };
   if (tool === "fetch_content") {
     const pages = [call["url"], ...(Array.isArray(call["urls"]) ? call["urls"] : [])].filter((one): one is string => typeof one === "string" && /^https?:\/\/\S+$/i.test(one.trim())).map((one) => one.trim());
     return { files: [], reads: pages };
@@ -337,6 +339,18 @@ export function stepsOf(result: unknown): readonly Step[] | undefined {
     size += more;
   }
   return steps;
+}
+
+/**
+ * The report pi-subagents keeps for a run that finished, as its result names it, first among the card's files: what the helper made for
+ * the seller. A run paused, stopped or cut short made none; its card keeps its files as they were. A call's `output` would put the report
+ * elsewhere, but rewrites the helper's task with that path as the one that wins, over a place the task names.
+ */
+export function withReport(files: readonly string[] | undefined, event: Record<string, unknown>, tree: string): { files?: string[] } {
+  const results = endState(event) === "done" && Array.isArray(event["results"]) ? event["results"].map(record) : [];
+  const reports = results.flatMap((one) => arrival("write", { path: text(one["savedOutputPath"]) ?? text(one["artifactPath"]) }, tree).files);
+  const all = [...new Set([...reports, ...(files ?? [])])];
+  return all.length === 0 ? {} : { files: all };
 }
 
 /** A card with what arrived added at the ends of its lists, each once, while both lists stay within `LISTS_MAX_BYTES`. */
@@ -621,9 +635,9 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     // A run continued from another starts with no call of its own; while one resume alone is asked, the run is that one's, on its card.
     const continued = toolCallId === undefined && resuming.size === 1 ? found(person, [...resuming.values()][0]!.from) : undefined;
     if (continued !== undefined) {
-      // A paused helper goes on with its steps; one that ended shows none until it lists its steps again, as the signed sheet draws it.
-      const { ended: _ended, took: _took, steps, ...card } = whole(continued);
-      write(person, { ...card, state: "working", ran: card.ran ?? 0, since: at, run, ...(dir === undefined ? {} : { dir }), ...(continued.state === "paused" && steps !== undefined ? { steps } : {}) });
+      // A helper goes on with the steps it had, paused or ended, until it lists them again: its session's list, earlier steps and new.
+      const { ended: _ended, took: _took, ...card } = whole(continued);
+      write(person, { ...card, state: "working", ran: card.ran ?? 0, since: at, run, ...(dir === undefined ? {} : { dir }) });
       if (dir !== undefined) follow(person, run, dir);
       return;
     }
@@ -658,7 +672,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
       file: card?.file ?? `${stamp(ended)}${suffix(run)}`, name: card?.name || (text(event["agent"]) ?? "subagent"), face: card?.face ?? nextFace(person),
       // A run a stop cut, its card marked `off` at the start, ends here as pi-subagents' own reconciliation fails it: it stays `off`.
       state: card?.state === "off" ? "off" : endState(event), at: card?.at ?? ended, ended, took, ran: card === undefined ? took : worked(card), run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
-      ...(card?.files === undefined ? {} : { files: card.files }), ...(card?.reads === undefined ? {} : { reads: card.reads }), ...(card?.steps === undefined ? {} : { steps: card.steps }),
+      ...withReport(card?.files, event, cwd), ...(card?.reads === undefined ? {} : { reads: card.reads }), ...(card?.steps === undefined ? {} : { steps: card.steps }),
     });
   });
 }

@@ -73,7 +73,7 @@ it("gives a new helper a folder of its own under the person's, which its files l
   const folder = folderIn(helper.last)!;
   expect(folder).toMatch(new RegExp(`^${FOLDERS}/${PERSON}/\\d{8}-\\d{6}$`));
   expect(readFileSync(join(tenant, folder, "draft.md"), "utf8")).toBe("FIRST-RUN-DRAFT");
-  expect(first!.files).toEqual([`${folder}/draft.md`]);
+  expect(first!.files).toEqual([`.pi/sessions/subagent-artifacts/${first!.run}_helper_output.md`, `${folder}/draft.md`]);
   // The card keeps the seller's task as it was asked; only the helper reads where its folder is.
   expect(first!.task).toBe("FOLDER-TASK: draft the title.");
   // The seller's plugin, installed in the tree, loads in the helper started from the tree.
@@ -110,7 +110,7 @@ it("tells a helper whose task names a place that the place wins, and the result 
   const folder = folderIn(helper.last)!;
   expect(readFileSync(join(tenant, "reports", "june.md"), "utf8")).toBe("JUNE");
   expect(readdirSync(join(tenant, folder))).toEqual([]);
-  expect(done!.files).toEqual(["reports/june.md"]);
+  expect(done!.files).toEqual([`.pi/sessions/subagent-artifacts/${done!.run}_helper_output.md`, "reports/june.md"]);
   expect(existsSync(join(tenant, folder))).toBe(true);
 }, 180_000);
 
