@@ -17,16 +17,12 @@ export const HAND_OUT =
 export const TO_HELPER =
   "A message that begins **@name** is the seller's words for their helper of that name on the board: pass them on with `subagent`, `steer` while it works and `resume` once it has paused or ended, and leave a helper the seller paused or stopped as it is until the seller asks otherwise.";
 
-/** A helper that ended keeps its run, so more of the same work goes on on its card, its files and what it read kept. */
-export const GO_ON =
-  "When the seller wants more from a helper that has ended, continue that helper with `resume`, which keeps its card, its files and what it read; start a new helper only where it cannot be resumed.";
-
 /**
- * What a continuation costs: it sends the helper's earlier run again, and a provider that still holds that input in its cache may charge
- * less for it. How long a provider holds it is the provider's, so no time is named. A fact for cx, no rule: nothing times or closes a helper.
+ * Jack's ruling of 2026-11-17, said as a fact: the same helper goes on with the same work, and unrelated work starts a new one. Going on
+ * soon is cheap because the provider still holds the helper's earlier run in its cache; later the whole run is read again.
  */
-export const CACHE =
-  "Telling a helper more about the same work reuses what it has already read, and input the model's provider still holds in its cache may cost less.";
+export const GO_ON =
+  "More of the same work goes on with the helper that did it, continued with `resume`, which keeps its card, its files and what it read: within minutes of its last step that is cheap, and later it reads its whole earlier run again; unrelated work starts a new helper.";
 
 /** A fork starts from cx's own conversation, so its first prompt is not its first, and the helper's folder is never said to it. A fact for cx, no rule. */
 export const FORK =
@@ -35,7 +31,7 @@ export const FORK =
 export function handOut(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {
     const guidelines = event.systemPromptOptions.toolGuidelines ??= {};
-    guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT, TO_HELPER, GO_ON, CACHE, FORK];
+    guidelines[SUBAGENT_TOOL] = [...(guidelines[SUBAGENT_TOOL] ?? []), HAND_OUT, TO_HELPER, GO_ON, FORK];
   });
 }
 
