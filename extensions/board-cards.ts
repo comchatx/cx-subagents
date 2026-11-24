@@ -340,6 +340,17 @@ export function stepsOf(result: unknown): readonly Step[] | undefined {
 }
 
 /** A card with what arrived added at the ends of its lists, each once, while both lists stay within `LISTS_MAX_BYTES`. */
+/**
+ * The report pi-subagents keeps for a run, as its result names it, first among the card's files: what the helper made for the seller.
+ * A call's `output` would put it elsewhere, but rewrites the helper's task with that path as the one that wins, over a place the task names.
+ */
+export function withReport(files: readonly string[] | undefined, event: Record<string, unknown>, tree: string): { files?: string[] } {
+  const results = Array.isArray(event["results"]) ? event["results"].map(record) : [];
+  const reports = results.flatMap((one) => arrival("write", { path: text(one["savedOutputPath"]) ?? text(one["artifactPath"]) }, tree).files);
+  const all = [...new Set([...reports, ...(files ?? [])])];
+  return all.length === 0 ? {} : { files: all };
+}
+
 export function withArrival(card: Card, came: { readonly files: readonly string[]; readonly reads: readonly string[] }): Card {
   const files = [...(card.files ?? [])];
   const reads = [...(card.reads ?? [])];
@@ -658,7 +669,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
       file: card?.file ?? `${stamp(ended)}${suffix(run)}`, name: card?.name || (text(event["agent"]) ?? "subagent"), face: card?.face ?? nextFace(person),
       // A run a stop cut, its card marked `off` at the start, ends here as pi-subagents' own reconciliation fails it: it stays `off`.
       state: card?.state === "off" ? "off" : endState(event), at: card?.at ?? ended, ended, took, ran: card === undefined ? took : worked(card), run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
-      ...(card?.files === undefined ? {} : { files: card.files }), ...(card?.reads === undefined ? {} : { reads: card.reads }), ...(card?.steps === undefined ? {} : { steps: card.steps }),
+      ...withReport(card?.files, event, cwd), ...(card?.reads === undefined ? {} : { reads: card.reads }), ...(card?.steps === undefined ? {} : { steps: card.steps }),
     });
   });
 }

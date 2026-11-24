@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -82,10 +82,12 @@ export class Box {
   #next = 0;
 
   constructor(modelUrl: string, options: { readonly config?: boolean; readonly subagent?: Record<string, unknown>; readonly replay?: boolean; readonly packages?: readonly string[]; readonly extension?: string } = {}) {
-    this.home = mkdtempSync(join(tmpdir(), "cx-subagents-"));
+    this.home = realpathSync(mkdtempSync(join(tmpdir(), "cx-subagents-")));
     const agent = join(this.home, "agent");
     const tenant = join(this.home, "tenant");
-    for (const directory of [agent, tenant, join(this.home, "tmp"), join(this.home, "sessions")]) mkdirSync(directory, { recursive: true });
+    // The sessions sit in the tree, as the computer's steward starts pi (`--session-dir <tree>/.pi/sessions`).
+    const sessions = join(tenant, ".pi", "sessions");
+    for (const directory of [agent, tenant, join(this.home, "tmp"), sessions]) mkdirSync(directory, { recursive: true });
     writeFileSync(join(agent, "settings.json"), JSON.stringify({
       defaultProvider: "google", defaultModel: "gemini-3.6-flash", defaultThinkingLevel: "low", transport: "sse", quietStartup: true, defaultProjectTrust: "always",
       cacheWarming: "off", steeringMode: "all", retry: { enabled: false }, extensions: ["-builtin:llama.cpp"], packages: [PI_SUBAGENTS, ROOT, ...(options.packages ?? [])],
@@ -105,7 +107,7 @@ export class Box {
       writeFileSync(join(agent, "extensions", "test-own.ts"), options.extension);
     }
     const env = { PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", PI_CODING_AGENT_DIR: agent, HOME: agent, PATH: process.env["PATH"] ?? "", TMPDIR: join(this.home, "tmp") };
-    this.#child = spawn(process.execPath, [PI, "--mode", "rpc", "--session-dir", join(this.home, "sessions")], { cwd: tenant, env, stdio: ["pipe", "pipe", "pipe"], detached: true });
+    this.#child = spawn(process.execPath, [PI, "--mode", "rpc", "--session-dir", sessions], { cwd: tenant, env, stdio: ["pipe", "pipe", "pipe"], detached: true });
     this.#child.stderr?.on("data", (chunk: Buffer) => { this.stderr += chunk.toString(); });
     createInterface({ input: this.#child.stdout! }).on("line", (line) => {
       let frame: Frame;

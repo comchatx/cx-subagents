@@ -68,6 +68,9 @@ it("puts a helper in its tab at work when it starts, the task's first line its n
   expect(ended).toMatchObject({ file: started!.file, name: started!.name, face: 0, at: started!.at, task: TASK });
   expect(ended!.took).toBeGreaterThanOrEqual(4);
   expect(ended!.ended).toBeGreaterThan(ended!.at);
+  // The report pi-subagents keeps for the run is the card's first file, where the seller's tree holds it.
+  expect(ended!.files![0]).toMatch(/^\.pi\/sessions\/subagent-artifacts\/[^/]+_output\.md$/);
+  expect(readFileSync(join(box.home, "tenant", ended!.files![0]!), "utf8")).toContain("CHILD-RESULT");
   expect(readdirSync(join(tab, ".."))).toEqual([TAB]);
 }, 180_000);
 
