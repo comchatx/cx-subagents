@@ -42,7 +42,7 @@ it("ships its extensions, its one helper and its page, names pi-subagents at the
     { on: "pi-subagents", tested: manifest.devDependencies["pi-subagents"], why: { en: "Lets helpers work in the background.", zh: "用于让帮手在后台做事。" } },
     { on: "@comchatx/cx-board", why: { en: "Puts helpers' cards on the board.", zh: "用于在看板上放帮手的卡片。" } },
   ]);
-  expect(manifest.devDependencies["@earendil-works/pi-coding-agent"]).toBe("1.5.2");
+  expect(manifest.devDependencies["@earendil-works/pi-coding-agent"]).toBe("1.6.0");
   // The Plugins page lists a package's skills from this field alone; with no skill there is none.
   expect(manifest.comchatx).not.toHaveProperty("skills");
   // pi-subagents is named, not carried. A helper's steps are rpiv-todo's, which npm installs with the package, at the version tested.
