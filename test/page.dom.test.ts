@@ -352,6 +352,7 @@ it("offers each card the presses its state takes, and writes a pause and a go-on
   await p.change(card("a-subagent-1.md", { name: "竞品对比", state: "paused", at: T0 + 5 }));
   (p.document.querySelector('#a-subagent-1\\.md [data-act="resume"]') as unknown as Press).click();
   expect([p.document.getElementById("a-subagent-1.md")?.querySelector(".hc-line")?.textContent, focused(p)]).toEqual(["正在处理", "pause"]);
+  expect(p.document.getElementById("a-subagent-1.md")?.querySelector(".hc-line > .kit-working")?.textContent).toBe("正在处理");
   await settle();
   expect(pressIn(p, "a-subagent-1.md")).toBe('"resume"');
   expect(p.store.get("a-subagent-1.md")!.text.match(/^press: /gm)).toHaveLength(1);
