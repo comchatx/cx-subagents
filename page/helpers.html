@@ -249,7 +249,7 @@
    * gone. The package writes the card again once it is done, and the card is then drawn as the run stands.
    */
   function pressedAs(one) {
-    const ran = one.ran + (one.state === "working" && one.since !== undefined ? Math.max(0, Math.floor((Date.now() - one.since) / 1000)) : 0);
+    const ran = one.ran + ((one.state === "working" || one.state === "waiting") && one.since !== undefined ? Math.max(0, Math.floor((Date.now() - one.since) / 1000)) : 0);
     if (one.press === "pause" && (one.state === "working" || one.state === "waiting")) return { ...one, state: "paused", ran, since: undefined };
     if (one.press === "resume" && one.state === "paused") return { ...one, state: "working", since: Date.now() };
     if (one.press === "stop" && atWork(one)) return { ...one, state: "stopped", ended: Date.now(), ran, since: undefined };
@@ -293,8 +293,8 @@
   /** A time since in the build's own words: seconds under a minute, then minutes, then hours and minutes. */
   const span = (seconds) => seconds < 60 ? w().seconds(Math.max(1, Math.floor(seconds))) : seconds < 3600 ? w().minutes(Math.floor(seconds / 60)) : w().hoursMinutes(Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60));
   const clock = (ms) => { const at = new Date(ms); return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`; };
-  // The time a helper ran counts only at work: what it worked before, and its present stretch while it works; waiting or paused it stands.
-  const ran = (card) => card.ran + (card.state === "working" && card.since !== undefined ? Math.max(0, Math.floor((Date.now() - card.since) / 1000)) : 0);
+  // The time a helper ran is its runs' own: what its earlier runs took, and its present run from the start pi-subagents gave it; paused, it stands.
+  const ran = (card) => card.ran + ((card.state === "working" || card.state === "waiting") && card.since !== undefined ? Math.max(0, Math.floor((Date.now() - card.since) / 1000)) : 0);
   const atWork = (card) => card.state === "working" || card.state === "waiting" || card.state === "paused";
   const groupOf = (card) => (atWork(card) ? "going" : card.state === "done" ? "done" : "cut");
 
@@ -591,7 +591,7 @@
   read();
   // How long each helper at work has run, kept up to the second.
   setInterval(() => {
-    for (const one of cards.values()) if (one.state === "working") { const at = page.querySelector(`[data-age="${CSS.escape(one.file)}"]`); const words = span(ran(one)); if (at && at.textContent !== words) { at.textContent = words; at.setAttribute("aria-label", w().ran(words)); } }
+    for (const one of cards.values()) if (one.state === "working" || one.state === "waiting") { const at = page.querySelector(`[data-age="${CSS.escape(one.file)}"]`); const words = span(ran(one)); if (at && at.textContent !== words) { at.textContent = words; at.setAttribute("aria-label", w().ran(words)); } }
   }, 1000);
 })();
 </script>

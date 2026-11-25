@@ -60,12 +60,15 @@ export type Card = {
   readonly name: string;
   readonly face: number;
   readonly state: State;
-  /** When the run started, ms. */
+  /** When its first run started, ms. */
   readonly at: number;
-  /** When it ended, ms; and how long it ran, in seconds. */
+  /** When it ended, ms; and how long its runs ran in all, in seconds. */
   readonly ended?: number;
   readonly took?: number;
-  /** The seconds it worked before its present stretch at work, and when that stretch began, ms: the time it ran counts only at work. */
+  /**
+   * The seconds its earlier runs ran, and when its present run started, ms, as pi-subagents' `status.json` says: the time a helper ran
+   * is its runs' own, from each start to its end, so a helper continued goes on from what its runs before it took.
+   */
   readonly ran?: number;
   readonly since?: number;
   readonly run: string;
@@ -261,6 +264,12 @@ export function moveEarlier(person: string): number {
  * has no `status.json`; where it keeps it on its disk (`comchatx.env`), the run's `status.json` still says it runs or waits its turn, under
  * a boot of the computer that is not this one. Where the system gives no boot, a run whose folder stands is taken as not cut.
  */
+/** When pi-subagents started a run, ms, from the `startedAt` its `status.json` holds from the launch on. */
+function startOf(dir: string | undefined): number | undefined {
+  if (dir === undefined) return undefined;
+  try { const at = record(JSON.parse(readFileSync(join(dir, "status.json"), "utf8")))["startedAt"]; return typeof at === "number" ? at : undefined; } catch { return undefined; }
+}
+
 function cutByStop(dir: string, boot: string | undefined): boolean {
   let status: Record<string, unknown>;
   try { status = record(JSON.parse(readFileSync(join(dir, "status.json"), "utf8"))); } catch { return !existsSync(join(dir, "status.json")); }
@@ -491,8 +500,6 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
   let requests = 0;
   let cwd = process.cwd();
 
-  /** The seconds a card at work has worked so far: before its present stretch, and in it. */
-  const worked = (card: Pick<Card, "ran" | "since">): number => (card.ran ?? 0) + (card.since === undefined ? 0 : Math.max(0, Math.round((now() - card.since) / 1000)));
   const whole = (card: ReadCard): Card => { const { press: _press, ...rest } = card; return { ...rest, face: card.face ?? 0, state: card.state ?? "working" }; };
   /** Rewrites a run's card with what changed, the name and face its file holds kept. */
   const update = (person: string, run: string, change: (card: Card) => Card): void => {
@@ -561,10 +568,10 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
       }
       if (event["type"] === "tool_execution_start" && asksCx(event["toolName"], event["args"])) {
         waits.add(id);
-        update(person, run, (card) => (card.state === "working" ? (({ since: _since, ...rest }) => ({ ...rest, state: "waiting" as const, ran: worked(card) }))(card) : card));
+        update(person, run, (card) => (card.state === "working" ? { ...card, state: "waiting" } : card));
       }
       if (event["type"] === "tool_execution_end" && waits.delete(id) && waits.size === 0) {
-        update(person, run, (card) => (card.state === "waiting" ? { ...card, state: "working", since: now() } : card));
+        update(person, run, (card) => (card.state === "waiting" ? { ...card, state: "working" } : card));
       }
     });
     followers.set(run, follower);
@@ -630,8 +637,8 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const person = personDir(cwd);
     if (run === undefined || person === undefined) return;
     const toolCallId = text(event["toolCallId"]);
-    const at = now();
     const dir = text(event["asyncDir"]);
+    const at = startOf(dir) ?? now();
     // A run continued from another starts with no call of its own; while one resume alone is asked, the run is that one's, on its card.
     const continued = toolCallId === undefined && resuming.size === 1 ? found(person, [...resuming.values()][0]!.from) : undefined;
     if (continued !== undefined) {
@@ -666,12 +673,14 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const before = found(person, run);
     const card = before === undefined ? undefined : [...new Set(sessions.filter((one): one is string => one !== undefined))]
       .reduce((one, session) => withArrival(one, sessionArrivals(session, cwd)), { ...before, face: before.face ?? 0, state: before.state ?? "working" } as Card);
-    const took = typeof event["durationMs"] === "number" ? Math.round(event["durationMs"] / 1000) : card === undefined ? 0 : Math.max(0, Math.round((ended - card.at) / 1000));
+    // pi-subagents' own time for the run, from the start its `status.json` holds to its end, after what the helper's runs before it took.
+    const span = typeof event["durationMs"] === "number" ? event["durationMs"] : card?.since === undefined ? 0 : ended - card.since;
+    const took = (card?.ran ?? 0) + Math.max(0, Math.round(span / 1000));
     const dir = card?.dir ?? text(event["asyncDir"]);
     write(person, {
       file: card?.file ?? `${stamp(ended)}${suffix(run)}`, name: card?.name || (text(event["agent"]) ?? "subagent"), face: card?.face ?? nextFace(person),
       // A run a stop cut, its card marked `off` at the start, ends here as pi-subagents' own reconciliation fails it: it stays `off`.
-      state: card?.state === "off" ? "off" : endState(event), at: card?.at ?? ended, ended, took, ran: card === undefined ? took : worked(card), run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
+      state: card?.state === "off" ? "off" : endState(event), at: card?.at ?? ended, ended, took, ran: took, run, task: card?.task ?? "", ...(dir === undefined ? {} : { dir }),
       ...withReport(card?.files, event, cwd), ...(card?.reads === undefined ? {} : { reads: card.reads }), ...(card?.steps === undefined ? {} : { steps: card.steps }),
     });
   });
