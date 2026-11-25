@@ -156,10 +156,12 @@ it("overwrites a run's card when the same run id starts again, its face kept", a
   box.prompt("Start a helper.");
   await box.until(said("PARENT-HANDED"), 60_000);
   const [first] = await eventually(() => cards(tab), (list) => list.length === 1, 10_000);
-  await new Promise((done) => setTimeout(done, 1_100));
+  // The card's start is the launch's own, the same at a start heard again, so the card is marked ended first to see it written again.
+  const path = join(tab, first!.file);
+  writeFileSync(path, readFileSync(path, "utf8").replace('state: "working"', 'state: "failed"'));
   // pi-subagents' own start of this run, sent again on the session's bus as it was: the same run id, the same call.
   box.prompt("/replay-start");
-  const [again, ...more] = await eventually(() => cards(tab), (list) => list[0] !== undefined && list[0].at > first!.at, 10_000);
+  const [again, ...more] = await eventually(() => cards(tab), (list) => list[0]?.state === "working", 10_000);
   expect(more).toEqual([]);
   expect(again).toMatchObject({ file: first!.file, face: 0, state: "working", name: "AGAIN-TASK: look again", task: "AGAIN-TASK: look again" });
 }, 120_000);

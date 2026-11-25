@@ -126,8 +126,8 @@ it("ends a card as pi-subagents' result says: done with when and how long, at it
   s.call("c1", { task: "compare rivals" });
   s.started({ id: "run-1", toolCallId: "c1" });
   s.clock.at = T0 + 300_000;
-  s.complete({ id: "run-1", state: "complete", success: true, durationMs: 245_400, results: [{ output: "words" }] });
-  expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ name: "compare rivals", face: 0, state: "done", at: T0, ended: T0 + 300_000, took: 245, task: "compare rivals" });
+  s.complete({ id: "run-1", state: "complete", success: true, timestamp: T0 + 245_400, durationMs: 245_400, results: [{ output: "words" }] });
+  expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ name: "compare rivals", face: 0, state: "done", at: T0, ended: T0 + 245_400, took: 245, task: "compare rivals" });
 });
 
 it("keeps the name the seller wrote on the card, and the card's face, when the package rewrites it", () => {
@@ -299,7 +299,7 @@ it("times a run from the start pi-subagents gives it, and runs on while the help
   run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "contact_supervisor" });
   await eventually(() => s.card(file)?.state, (state) => state === "working");
   expect(s.card(file)).toMatchObject({ ran: 0, since: T0 - 30_000 });
-  s.complete({ id: "run-1", state: "paused", durationMs: 660_000 });
+  s.complete({ id: "run-1", state: "paused", timestamp: T0 + 630_000, durationMs: 655_000 });
   const after = s.card(file)!;
   expect([after.state, after.ran, after.since, after.took]).toEqual(["paused", 660, undefined, 660]);
 });
@@ -310,17 +310,36 @@ it("goes on from what a helper's earlier runs took when it is continued, so a he
   const file = "20261105-093000-subagent-run-1.md";
   s.call("c1", { task: "compare rivals" });
   s.started({ id: "run-1", toolCallId: "c1", asyncDir: runDir(s.cwd, "run-1", T0).dir });
-  s.complete({ id: "run-1", state: "complete", durationMs: 100_000 });
+  s.complete({ id: "run-1", state: "complete", timestamp: T0 + 100_000, durationMs: 96_000 });
   s.result("c1");
-  expect(s.card(file)).toMatchObject({ state: "done", took: 100, ran: 100 });
+  expect(s.card(file)).toMatchObject({ state: "done", ended: T0 + 100_000, took: 100, ran: 100 });
   for (const [n, start, ms, took] of [[2, T0 + 3_600_000, 50_000, 150], [3, T0 + 7_200_000, 30_000, 180]] as const) {
     s.call(`c${n}`, { action: "resume", id: `run-${n - 1}`, message: "go on" });
     s.started({ id: `run-${n}`, asyncDir: runDir(s.cwd, `run-${n}`, start).dir });
     expect(s.card(file)).toMatchObject({ state: "working", run: `run-${n}`, at: T0, ran: took - ms / 1000, since: start });
-    s.complete({ id: `run-${n}`, state: "complete", durationMs: ms });
+    s.complete({ id: `run-${n}`, state: "complete", timestamp: start + ms, durationMs: ms - 4_000 });
     s.result(`c${n}`);
     expect(s.card(file)).toMatchObject({ state: "done", took, ran: took });
   }
+});
+
+it("counts a run from its launch to its result's own end, so a pause after ten seconds never shows less when the runner started later", () => {
+  const s = session();
+  s.start();
+  const file = "20261105-093000-subagent-run-1.md";
+  // pi-subagents writes the launch's start before it announces the run; its runner starts five seconds later and times itself from there.
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: runDir(s.cwd, "run-1", T0).dir });
+  s.clock.at = T0 + 10_000;
+  const live = s.card(file)!;
+  expect((s.clock.at - live.since!) / 1000).toBe(10);
+  // Paused at ten seconds; the runner ends a second later, its own duration six seconds; the result reaches the package later still.
+  s.clock.at = T0 + 40_000;
+  s.complete({ id: "run-1", state: "paused", timestamp: T0 + 11_000, durationMs: 6_000 });
+  expect(s.card(file)).toMatchObject({ state: "paused", ended: T0 + 11_000, took: 11, ran: 11 });
+  s.call("c2", { action: "resume", id: "run-1", message: "go on" });
+  s.started({ id: "run-2", asyncDir: runDir(s.cwd, "run-2", T0 + 60_000).dir });
+  expect(s.card(file)).toMatchObject({ state: "working", ran: 11, since: T0 + 60_000 });
 });
 
 it("marks off a card at work whose run's folder outlived the stop on the disk, its status still at work under another boot, and keeps it off at the end pi-subagents then gives it", () => {
