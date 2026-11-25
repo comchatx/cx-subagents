@@ -264,7 +264,7 @@ export function moveEarlier(person: string): number {
  * has no `status.json`; where it keeps it on its disk (`comchatx.env`), the run's `status.json` still says it runs or waits its turn, under
  * a boot of the computer that is not this one. Where the system gives no boot, a run whose folder stands is taken as not cut.
  */
-/** When pi-subagents launched a run, ms: the `startedAt` its `status.json` holds when the run is announced, written before the runner starts. */
+/** When a run started, ms: the `startedAt` its `status.json` holds when the run is announced, the launch's or, where the runner has written already, the runner's. */
 function startOf(dir: string | undefined): number | undefined {
   if (dir === undefined) return undefined;
   try { const at = record(JSON.parse(readFileSync(join(dir, "status.json"), "utf8")))["startedAt"]; return typeof at === "number" ? at : undefined; } catch { return undefined; }
@@ -674,7 +674,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     const before = found(person, run);
     const card = before === undefined ? undefined : [...new Set(sessions.filter((one): one is string => one !== undefined))]
       .reduce((one, session) => withArrival(one, sessionArrivals(session, cwd)), { ...before, face: before.face ?? 0, state: before.state ?? "working" } as Card);
-    // One start and one end for the run: the launch's `startedAt` the card took as `since`, and the result's `timestamp`. The result's
+    // One start and one end for the run: the `startedAt` the card took as `since`, and the result's `timestamp`. The result's
     // `durationMs` counts from the runner's own later start, so it is read only where the card holds no start.
     const span = card?.since !== undefined ? ended - card.since : typeof event["durationMs"] === "number" ? event["durationMs"] : 0;
     const took = (card?.ran ?? 0) + Math.max(0, Math.round(span / 1000));
