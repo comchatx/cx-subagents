@@ -5,10 +5,13 @@ export const SUBAGENT_TOOL = "subagent";
 
 /**
  * pi-subagents delegates only when the operator asked, directly or through their instructions; the seller who installed this package
- * leaves the call to cx. Which work, and when to ask the seller, stay cx's own.
+ * leaves the call to cx. Which work, and when to ask the seller, stay cx's own. Two facts go with a hand-out: the task's first line is
+ * the card's name, which the chat quotes, and a helper's result wakes cx, so waiting for it in the same turn only holds the chat.
  */
 export const HAND_OUT =
-  "The seller installed helpers for you: whether to hand a piece of work to one is your own judgement, and the seller need not ask for it.";
+  "The seller installed helpers for you: whether to hand a piece of work to one is your own judgement, and the seller need not ask for it. " +
+  "The first line of a helper's task is its name on the seller's card and in the chat, so it is a few words naming the work. " +
+  "A helper runs in the background and its result wakes you, and waiting on it within the same turn holds the seller's chat until it ends.";
 
 /**
  * The seller writes to a helper on its card, and the board sends it to cx as the seller's message, the card's name first; cx is the one

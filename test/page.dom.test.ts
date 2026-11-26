@@ -216,12 +216,12 @@ it("writes a name as it was typed, `$&`, `$1`, `$$` and their kin as the charact
   expect(p.document.querySelector(".hc-name")?.textContent).toBe(typed);
 });
 
-it("runs a helper's time only at work: after a minute the one at work is a minute on, the waiting and the paused one keep theirs", async () => {
+it("runs a helper's time while its run runs: after a minute the one at work and the waiting one are a minute on, the paused one keeps its own", async () => {
   const now = vi.spyOn(Date, "now").mockReturnValue(T0 + 10 * 60_000);
   try {
     const p = page([
       card("a-subagent-1.md", { name: "at work", at: T0, ran: 60, since: T0 + 9 * 60_000 }),
-      card("b-subagent-2.md", { name: "waiting", state: "waiting", at: T0 - 1, ran: 120 }),
+      card("b-subagent-2.md", { name: "waiting", state: "waiting", at: T0 - 1, ran: 60, since: T0 + 9 * 60_000 }),
       card("c-subagent-3.md", { name: "paused", state: "paused", at: T0 - 2, ran: 300 }),
     ], "en");
     await settle();
@@ -229,10 +229,10 @@ it("runs a helper's time only at work: after a minute the one at work is a minut
     expect(ages()).toEqual(["2 min", "2 min", "5 min"]);
     now.mockReturnValue(T0 + 11 * 60_000);
     p.tick();
-    expect(ages()).toEqual(["3 min", "2 min", "5 min"]);
+    expect(ages()).toEqual(["3 min", "3 min", "5 min"]);
     // Drawn again, as when the board says a file changed, each keeps the same time.
     await p.hear("context");
-    expect(ages()).toEqual(["3 min", "2 min", "5 min"]);
+    expect(ages()).toEqual(["3 min", "3 min", "5 min"]);
   } finally {
     now.mockRestore();
   }
@@ -352,6 +352,7 @@ it("offers each card the presses its state takes, and writes a pause and a go-on
   await p.change(card("a-subagent-1.md", { name: "竞品对比", state: "paused", at: T0 + 5 }));
   (p.document.querySelector('#a-subagent-1\\.md [data-act="resume"]') as unknown as Press).click();
   expect([p.document.getElementById("a-subagent-1.md")?.querySelector(".hc-line")?.textContent, focused(p)]).toEqual(["正在处理", "pause"]);
+  expect(p.document.getElementById("a-subagent-1.md")?.querySelector(".hc-line > .kit-working")?.textContent).toBe("正在处理");
   await settle();
   expect(pressIn(p, "a-subagent-1.md")).toBe('"resume"');
   expect(p.store.get("a-subagent-1.md")!.text.match(/^press: /gm)).toHaveLength(1);

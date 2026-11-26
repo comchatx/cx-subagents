@@ -23,7 +23,12 @@ it("tells cx how a seller's message reaches a helper and that a helper that ende
   expect(TO_HELPER).toMatch(/`steer` while it works and `resume` once it has paused or ended/);
 });
 
-it("leaves to cx which work to hand out and when to ask the seller: the sentence says whose call it is, nothing else", () => {
+it("tells cx with a hand-out that the task's first line is the card's name and that waiting on a helper holds the chat", () => {
+  expect(HAND_OUT).toContain("The first line of a helper's task is its name on the seller's card and in the chat, so it is a few words naming the work.");
+  expect(HAND_OUT).toContain("waiting on it within the same turn holds the seller's chat until it ends.");
+});
+
+it("leaves to cx which work to hand out and when to ask the seller: the sentences say whose call it is and two facts, no rule", () => {
   expect(HAND_OUT).toMatch(/own judgement/);
   expect(HAND_OUT).not.toMatch(/listing|research|long|when you|always|never/i);
 });

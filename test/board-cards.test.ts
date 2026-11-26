@@ -56,10 +56,10 @@ function session(people: readonly string[] = ["acct_1"], facts?: (cwd: string) =
 }
 
 /** A run's folder as pi-subagents keeps it: its status and the events it appends. */
-function runDir(cwd: string, run: string) {
+function runDir(cwd: string, run: string, startedAt?: number) {
   const dir = join(cwd, "runs", run);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "status.json"), JSON.stringify({ runId: run, state: "running" }));
+  writeFileSync(join(dir, "status.json"), JSON.stringify({ runId: run, state: "running", ...(startedAt === undefined ? {} : { startedAt }) }));
   writeFileSync(join(dir, "events.jsonl"), "");
   const log = join(dir, "events.jsonl");
   // macOS's file events can drop a change made just after a watch begins, which inotify on cx's computer does not: the log is touched
@@ -126,8 +126,8 @@ it("ends a card as pi-subagents' result says: done with when and how long, at it
   s.call("c1", { task: "compare rivals" });
   s.started({ id: "run-1", toolCallId: "c1" });
   s.clock.at = T0 + 300_000;
-  s.complete({ id: "run-1", state: "complete", success: true, durationMs: 245_400, results: [{ output: "words" }] });
-  expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ name: "compare rivals", face: 0, state: "done", at: T0, ended: T0 + 300_000, took: 245, task: "compare rivals" });
+  s.complete({ id: "run-1", state: "complete", success: true, timestamp: T0 + 245_400, durationMs: 245_400, results: [{ output: "words" }] });
+  expect(s.card("20261105-093000-subagent-run-1.md")).toMatchObject({ name: "compare rivals", face: 0, state: "done", at: T0, ended: T0 + 245_400, took: 245, task: "compare rivals" });
 });
 
 it("keeps the name the seller wrote on the card, and the card's face, when the package rewrites it", () => {
@@ -284,42 +284,62 @@ it("moves the package's cards from the board's own move of the old places into a
   expect([second.files(), readdirSync(join(second.person, "待办", "todo"))]).toEqual([["20261101-080000-subagent-r1.md"], ["mine.md"]]);
 });
 
-it("counts a helper's time only at work: the seconds it worked are kept while it waits, and its work goes on from when the answer comes", async () => {
+it("times a run from the start pi-subagents gives it, and runs on while the helper waits for an answer", async () => {
   const s = session();
-  const run = runDir(s.cwd, "run-1");
+  const run = runDir(s.cwd, "run-1", T0 - 30_000);
   s.call("c1", { task: "compare rivals" });
   s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
-  const card = () => readFileSync(join(s.tab, "20261105-093000-subagent-run-1.md"), "utf8");
-  expect(card()).toMatch(/^ran: 0$/m);
-  expect(card()).toMatch(new RegExp(`^since: "${new Date(T0).toISOString()}"$`, "m"));
-  s.clock.at = T0 + 90_000;
-  run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "contact_supervisor", args: { reason: "need_decision" } });
-  await eventually(card, (text) => /^state: "waiting"$/m.test(text));
-  expect([/^ran: 90$/m.test(card()), /^since:/m.test(card())]).toEqual([true, false]);
-  s.clock.at = T0 + 600_000;
-  run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "contact_supervisor" });
-  await eventually(card, (text) => /^state: "working"$/m.test(text));
-  expect([/^ran: 90$/m.test(card()), new RegExp(`^since: "${new Date(T0 + 600_000).toISOString()}"$`, "m").test(card())]).toEqual([true, true]);
-});
-
-it("counts a pause as a wait: the stretch at work added, nothing taken from the run's reported duration", async () => {
-  const s = session();
-  const run = runDir(s.cwd, "run-1");
-  s.call("c1", { task: "compare rivals" });
-  s.started({ id: "run-1", toolCallId: "c1", asyncDir: run.dir });
-  const file = "20261105-093000-subagent-run-1.md";
-  const worked = (at: number) => { const card = s.card(file)!; return (card.ran ?? 0) + (card.since === undefined ? 0 : Math.round((at - card.since) / 1000)); };
+  const file = "20261105-092930-subagent-run-1.md";
+  expect(s.card(file)).toMatchObject({ at: T0 - 30_000, ran: 0, since: T0 - 30_000 });
   s.clock.at = T0 + 90_000;
   run.event({ type: "tool_execution_start", toolCallId: "t1", toolName: "contact_supervisor", args: { reason: "need_decision" } });
   await eventually(() => s.card(file)?.state, (state) => state === "waiting");
+  expect(s.card(file)).toMatchObject({ ran: 0, since: T0 - 30_000 });
   s.clock.at = T0 + 600_000;
   run.event({ type: "tool_execution_end", toolCallId: "t1", toolName: "contact_supervisor" });
   await eventually(() => s.card(file)?.state, (state) => state === "working");
-  s.clock.at = T0 + 630_000;
-  const before = worked(T0 + 630_000);
-  s.complete({ id: "run-1", state: "paused", durationMs: 630_000 });
+  expect(s.card(file)).toMatchObject({ ran: 0, since: T0 - 30_000 });
+  s.complete({ id: "run-1", state: "paused", timestamp: T0 + 630_000, durationMs: 655_000 });
   const after = s.card(file)!;
-  expect([before, after.state, after.ran, after.since, after.took, worked(T0 + 700_000)]).toEqual([120, "paused", 120, undefined, 630, 120]);
+  expect([after.state, after.ran, after.since, after.took]).toEqual(["paused", 660, undefined, 660]);
+});
+
+it("goes on from what a helper's earlier runs took when it is continued, so a helper continued twice is done after its three runs' time", () => {
+  const s = session();
+  s.start();
+  const file = "20261105-093000-subagent-run-1.md";
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: runDir(s.cwd, "run-1", T0).dir });
+  s.complete({ id: "run-1", state: "complete", timestamp: T0 + 100_000, durationMs: 96_000 });
+  s.result("c1");
+  expect(s.card(file)).toMatchObject({ state: "done", ended: T0 + 100_000, took: 100, ran: 100 });
+  for (const [n, start, ms, took] of [[2, T0 + 3_600_000, 50_000, 150], [3, T0 + 7_200_000, 30_000, 180]] as const) {
+    s.call(`c${n}`, { action: "resume", id: `run-${n - 1}`, message: "go on" });
+    s.started({ id: `run-${n}`, asyncDir: runDir(s.cwd, `run-${n}`, start).dir });
+    expect(s.card(file)).toMatchObject({ state: "working", run: `run-${n}`, at: T0, ran: took - ms / 1000, since: start });
+    s.complete({ id: `run-${n}`, state: "complete", timestamp: start + ms, durationMs: ms - 4_000 });
+    s.result(`c${n}`);
+    expect(s.card(file)).toMatchObject({ state: "done", took, ran: took });
+  }
+});
+
+it("counts a run from its launch to its result's own end, so a pause after ten seconds never shows less when the runner started later", () => {
+  const s = session();
+  s.start();
+  const file = "20261105-093000-subagent-run-1.md";
+  // pi-subagents writes the launch's start before it announces the run; its runner starts five seconds later and times itself from there.
+  s.call("c1", { task: "compare rivals" });
+  s.started({ id: "run-1", toolCallId: "c1", asyncDir: runDir(s.cwd, "run-1", T0).dir });
+  s.clock.at = T0 + 10_000;
+  const live = s.card(file)!;
+  expect((s.clock.at - live.since!) / 1000).toBe(10);
+  // Paused at ten seconds; the runner ends a second later, its own duration six seconds; the result reaches the package later still.
+  s.clock.at = T0 + 40_000;
+  s.complete({ id: "run-1", state: "paused", timestamp: T0 + 11_000, durationMs: 6_000 });
+  expect(s.card(file)).toMatchObject({ state: "paused", ended: T0 + 11_000, took: 11, ran: 11 });
+  s.call("c2", { action: "resume", id: "run-1", message: "go on" });
+  s.started({ id: "run-2", asyncDir: runDir(s.cwd, "run-2", T0 + 60_000).dir });
+  expect(s.card(file)).toMatchObject({ state: "working", ran: 11, since: T0 + 60_000 });
 });
 
 it("marks off a card at work whose run's folder outlived the stop on the disk, its status still at work under another boot, and keeps it off at the end pi-subagents then gives it", () => {

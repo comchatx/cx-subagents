@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.0
+
+- A helper's time is its runs' own, as pi-subagents keeps it: from the `startedAt` its `status.json` holds when the package hears the run start, to the result's own end, for each run. It runs on while the helper waits for cx and stands while it is paused. A helper continued goes on from what its earlier runs took instead of starting lower, and a helper continued twice is done after its three runs' time.
+- cx reads, with the sentence on handing out work, that the first line of a helper's task is its name on the seller's card and in the chat, so a few words naming the work; and that a helper's result wakes cx, so waiting on it within the same turn holds the seller's chat until it ends.
+- A working card's 正在处理 / Working on it line takes the board kit's working shimmer (`kit-working`, cx-board 0.4.0) in place of plain words.
+- The tests run on pi 1.6.0, the box's pin.
+- A helper card that is waiting when you update can keep a wrong time for that run, after it finishes too; the helper's later runs count right.
+
 ## 0.9.0
 
 - No clock stops a helper. The helper, wherever it runs, and any single run of another agent cx starts carry the largest `timeoutMs` pi-subagents takes, 2,147,483,647 ms, about 24.8 days of counted run time. The helper's frontmatter carries it, and so does cx's call where cx names none, a limit written as `"null"` counting as none, as pi-subagents reads it. A child of another agent inside a chain, parallel tasks or a workflow keeps that agent's own limit, pi-subagents' 30 minutes where it names none. pi-subagents' own "needs attention" notice gives cx a turn when a helper holds a tool call open. The README no longer says a helper stops at 30 minutes.
