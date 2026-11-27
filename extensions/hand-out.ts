@@ -21,7 +21,7 @@ export const TO_HELPER =
   "A message that begins **@name** is the seller's words for their helper of that name on the board: pass them on with `subagent`, `steer` while it works and `resume` once it has paused or ended, and leave a helper the seller paused or stopped as it is until the seller asks otherwise.";
 
 /**
- * Jack's ruling of 2026-11-17, said as a fact: the same helper goes on with the same work, and unrelated work starts a new one. Going on
+ * The ruling of 2026-11-17, said as a fact: the same helper goes on with the same work, and unrelated work starts a new one. Going on
  * soon is cheap because the provider still holds the helper's earlier run in its cache; later the whole run is read again. A run that
  * failed or was stopped is not continued: a resume keeps the model the run was stored with, so it would meet the same refusal again,
  * and a new helper takes the way cx uses now.
