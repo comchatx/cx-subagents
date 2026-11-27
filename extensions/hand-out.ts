@@ -22,10 +22,12 @@ export const TO_HELPER =
 
 /**
  * Jack's ruling of 2026-11-17, said as a fact: the same helper goes on with the same work, and unrelated work starts a new one. Going on
- * soon is cheap because the provider still holds the helper's earlier run in its cache; later the whole run is read again.
+ * soon is cheap because the provider still holds the helper's earlier run in its cache; later the whole run is read again. A run that
+ * failed or was stopped is not continued: a resume keeps the model the run was stored with, so it would meet the same refusal again,
+ * and a new helper takes the way cx uses now.
  */
 export const GO_ON =
-  "More of the same work goes on with the helper that did it, continued with `resume`, which keeps its card, its files and what it read: within minutes of its last step that is cheap, and later it reads its whole earlier run again; unrelated work starts a new helper.";
+  "More of the same work goes on with the helper that did it, continued with `resume`, which keeps its card, its files and what it read: within minutes of its last step that is cheap, and later it reads its whole earlier run again; unrelated work starts a new helper. A helper that failed, or that the seller stopped, is not continued: what is left of that work starts a new helper.";
 
 /** A fork starts from cx's own conversation, so its first prompt is not its first, and the helper's folder is never said to it. A fact for cx, no rule. */
 export const FORK =
