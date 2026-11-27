@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.0
+
+- A card whose run ended while no session heard its end no longer stays 正在处理 / Working on it: the next session's start ends it from its run's `status.json`, with that run's state and end.
+- A card with no state reads as done in the extension, as the page already drew it.
+- A card stopped at its time limit reads 「{time} 超时，已停止」 / "Stopped at its time limit · {time}" in place of the 30-minute words, since a helper runs with no clock.
+- The package no longer moves cards from `todo/` and `done/`, where 0.3.5 and earlier wrote them.
+
 ## 0.10.1
 
 - cx reads, beside the `subagent` tool, that a helper that failed or that the seller stopped is not continued: what is left of its work starts a new helper, with its own card and its own clock, on the model cx uses now. A resumed run keeps the model it was started with.

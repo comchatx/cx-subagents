@@ -1,4 +1,4 @@
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmdirSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, unlinkSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -18,15 +18,6 @@ export const TAB = "帮手";
 /** The environment the computer hands each person's pi, naming that person's board (`CX_PERSON_FACTS`). */
 export const PERSON_FACTS = "CX_PERSON_FACTS";
 const BOARD = "board";
-/** The places the package's cards went before the tab: a `todo/` and a `done/`, the person's own or those of a tab of the board's. */
-const EARLIER = ["todo", "done"] as const;
-/**
- * What tells a card the package wrote before the tab: its name, a start's time then `-subagent-` and the run, and its head as 0.3.5 and
- * every version before it wrote one, `kind: finding`, the title as one JSON string and the start in ISO 8601 UTC, in that order, with no
- * other line but the `done`, `doneAt` and `answer` the board's module adds to one the seller handled.
- */
-const EARLIER_NAME = /^\d{8}-\d{6}-subagent-[A-Za-z0-9_-]+\.md$/;
-const EARLIER_HEAD = /^---\nkind: finding\ntitle: "(?:[^"\\\n]|\\.)*"\nat: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z(?:\n(?:done|doneAt|answer): [^\n]*)*\n---\n/;
 const PERSON = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 /** The most of one file the board reads; a larger card is cut to it. */
 export const CARD_MAX_BYTES = 32 * 1024;
@@ -220,45 +211,6 @@ function found(person: string, run: string): ReadCard | undefined {
 /** The next face: one after the highest any card in the tab holds. */
 const nextFace = (person: string): number => cardsIn(person).reduce((most, card) => Math.max(most, (card.face ?? -1) + 1), 0);
 
-/** Every place a card of the package's from before the tab can lie: the person's `todo/` and `done/`, and those of each tab of the board. */
-function earlierPlaces(person: string): string[] {
-  let tabs: string[];
-  try { tabs = readdirSync(person, { withFileTypes: true }).filter((one) => one.isDirectory() && !one.name.startsWith(".") && one.name !== TAB && !(EARLIER as readonly string[]).includes(one.name)).map((one) => one.name).sort(); } catch { return []; }
-  return [...EARLIER.map((place) => join(person, place)), ...tabs.flatMap((tab) => EARLIER.map((place) => join(person, tab, place)))];
-}
-
-/**
- * The package's cards from before the tab, moved into it: each file that reads as one (`EARLIER_NAME`, `EARLIER_HEAD`), from every place
- * one can lie, written as a card of the tab that ended at its file's last write — at its time limit where its words begin 「超时」, else
- * done, a handled one too — and the earlier file removed. A file that does not read as one stays as it is. Where a file already stands at
- * its place in the tab, whatever it holds, nothing is written and nothing removed: the earlier card stays where it is. The person's own
- * `todo/` and `done/` are then removed where nothing else is left in them; a tab's places stay as the board made them.
- */
-export function moveEarlier(person: string): number {
-  let moved = 0;
-  for (const from of earlierPlaces(person)) {
-    let names: string[];
-    try { names = readdirSync(from).filter((name) => EARLIER_NAME.test(name)).sort(); } catch { continue; }
-    for (const name of names) {
-      const path = join(from, name);
-      let raw: string;
-      let modified: number;
-      try { raw = readFileSync(path, "utf8"); modified = statSync(path).mtimeMs; } catch { continue; }
-      if (!EARLIER_HEAD.test(raw)) continue;
-      const old = readCard(name, raw);
-      if (old === undefined) continue;
-      if (existsSync(join(tabDir(person), name))) continue;
-      write(person, {
-        file: name, name: old.name, face: nextFace(person), state: /^超时(\n|$)/.test(old.task) ? "timeout" : "done",
-        at: old.at, ended: modified, took: Math.max(0, Math.round((modified - old.at) / 1000)), run: old.run, task: old.task,
-      });
-      try { unlinkSync(path); moved += 1; } catch { /* left as it is */ }
-    }
-    if (EARLIER.some((place) => from === join(person, place))) try { rmdirSync(from); } catch { /* the seller's files are in it */ }
-  }
-  return moved;
-}
-
 /**
  * Whether a run was cut by a stop of cx's computer. Where the computer keeps pi-subagents' folder in `/tmp`, a stop clears it, so the run
  * has no `status.json`; where it keeps it on its disk (`comchatx.env`), the run's `status.json` still says it runs or waits its turn, under
@@ -275,6 +227,14 @@ function cutByStop(dir: string, boot: string | undefined): boolean {
   try { status = record(JSON.parse(readFileSync(join(dir, "status.json"), "utf8"))); } catch { return !existsSync(join(dir, "status.json")); }
   const ran = text(status["bootId"]);
   return (status["state"] === "running" || status["state"] === "queued") && boot !== undefined && ran !== undefined && ran !== boot;
+}
+
+/** A run's `status.json`, where it says the run no longer runs or waits its turn. */
+function endedRun(dir: string): Record<string, unknown> | undefined {
+  let status: Record<string, unknown>;
+  try { status = record(JSON.parse(readFileSync(join(dir, "status.json"), "utf8"))); } catch { return undefined; }
+  const state = text(status["state"]);
+  return state === undefined || ["running", "queued", "pending"].includes(state) ? undefined : status;
 }
 
 /** A card still at work whose run a stop of cx's computer cut is marked `off` when a session starts. */
@@ -479,7 +439,7 @@ const oneLine = (name: string): string => name.replace(/\s+/g, " ").trim();
  * Each background run of pi-subagents is a card in the package's tab on the asker's board: at its start, at work, its task's first line
  * its name, its face the next in order; waiting for cx's answer while it asks cx, and at work again when the answer comes; at its end,
  * done, stopped, paused, at its time limit or failed, with when and how long. A run continued (`resume`) goes on on its card. A session's
- * start moves the earlier versions' cards into the tab once and marks `off` a card whose run was lost to a stop of cx's computer. The name
+ * start marks `off` a card whose run was lost to a stop of cx's computer, and ends one whose run ended while no session heard it. The name
  * the seller writes on the card is kept, and what the seller presses on it is done: pause, go on, stop, remove.
  */
 export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
@@ -500,7 +460,7 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
   let requests = 0;
   let cwd = process.cwd();
 
-  const whole = (card: ReadCard): Card => { const { press: _press, ...rest } = card; return { ...rest, face: card.face ?? 0, state: card.state ?? "working" }; };
+  const whole = (card: ReadCard): Card => { const { press: _press, ...rest } = card; return { ...rest, face: card.face ?? 0, state: card.state ?? "done" }; };
   /** Rewrites a run's card with what changed, the name and face its file holds kept. */
   const update = (person: string, run: string, change: (card: Card) => Card): void => {
     const card = found(person, run);
@@ -583,9 +543,16 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     cwd = ctx.cwd;
     const person = personDir(cwd);
     if (person === undefined) return;
-    moveEarlier(person);
     markOff(person, boot());
-    for (const card of cardsIn(person)) if (card.state !== undefined && AT_WORK.has(card.state) && card.dir !== undefined) follow(person, card.run, card.dir);
+    for (const card of cardsIn(person)) {
+      if (card.state === undefined || !AT_WORK.has(card.state) || card.dir === undefined) continue;
+      // A run that ended while no session heard its end is ended here, from what its folder says, as its end would have written it.
+      const ended = endedRun(card.dir);
+      if (ended === undefined) { follow(person, card.run, card.dir); continue; }
+      const at = typeof ended["endedAt"] === "number" ? ended["endedAt"] : now();
+      const took = (card.ran ?? 0) + Math.max(0, Math.round((at - (card.since ?? at)) / 1000));
+      write(person, { ...whole(card), state: endState(ended), ended: at, took, ran: took });
+    }
     mkdirSync(tabDir(person), { recursive: true });
     try { tabWatch = watch(tabDir(person), () => presses(person)); tabWatch.on("error", () => { tabWatch?.close(); tabWatch = undefined; }); } catch { /* no presses heard */ }
     presses(person);
