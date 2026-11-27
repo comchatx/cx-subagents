@@ -27,7 +27,7 @@ it("lists no skill and loads its two extensions: the helpers' cards on pi's tool
   expect(skills).toEqual([]);
   expect(extensions.errors).toEqual([]);
   expect(extensions.extensions.map((one) => one.resolvedPath)).toEqual([join(ROOT, "extensions", "board-cards.ts"), join(ROOT, "extensions", "hand-out.ts")]);
-  expect(extensions.extensions.map((one) => [...one.handlers.keys()].sort())).toEqual([["context", "session_shutdown", "session_start", "tool_call", "tool_result"], ["before_agent_start", "tool_call"]]);
+  expect(extensions.extensions.map((one) => [...one.handlers.keys()].sort())).toEqual([["agent_end", "context", "session_shutdown", "session_start", "tool_call", "tool_result"], ["before_agent_start", "tool_call"]]);
 });
 
 it("ships its extensions, its one helper and its page, names pi-subagents at the version it is tested with and cx-board for the Plugins page", () => {

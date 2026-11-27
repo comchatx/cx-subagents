@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.2
+
+- After a Stop that leaves helpers working, the package sends one notice after pi-subagents' own: 「{n} 个帮手仍在工作，可在“帮手”看板中暂停或停止。」 / "A helper is still working. Pause or stop it from the Helpers board." ("{n} helpers are still working. Pause or stop them from the Helpers board." for more than one). {n} counts the cards still working or waiting. The notice's message is the JSON of `{ "form": "comchatx.notice/1", "zh", "en" }`, and the page draws the seller's language; a page that does not read that form prints the JSON as written. With no helper working, nothing is sent.
+
 ## 0.10.1
 
 - cx reads, beside the `subagent` tool, that a helper that failed or that the seller stopped is not continued: what is left of its work starts a new helper, with its own card and its own clock, on the model cx uses now. A resumed run keeps the model it was started with.
