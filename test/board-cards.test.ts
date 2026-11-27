@@ -511,7 +511,7 @@ it("keeps a card's lists through its file and within their bound, the earliest k
 it("loads as pi loads it: the default export takes pi's events", () => {
   const seen: string[] = [];
   boardCardsDefault({ on: (name: string) => seen.push(name), events: { on: (name: string) => seen.push(name) } } as unknown as ExtensionAPI);
-  expect(seen.sort()).toEqual([COMPLETE, STARTED, "context", "session_shutdown", "session_start", "tool_call", "tool_result"].sort());
+  expect(seen.sort()).toEqual([COMPLETE, STARTED, "agent_end", "context", "session_shutdown", "session_start", "tool_call", "tool_result"].sort());
 });
 
 const todo = (tasks: unknown[], more: Record<string, unknown> = {}) => ({ content: [{ type: "text", text: "ok" }], details: { action: "update", params: {}, tasks, nextId: tasks.length + 1, ...more } });

@@ -13,6 +13,17 @@ export const QUESTION = "subagent_supervisor_request";
 /** What a paused helper is told when the seller lets it go on: pi-subagents' `resume` takes a message and starts the run again from its session. */
 export const CONTINUE_PAUSED = "Go on with your task from where you paused.";
 
+/**
+ * The line beside pi-subagents' own notice after a Stop that leaves helpers working, in both languages: the page draws the seller's
+ * (`comchatx.notice/1`). The count is the cards still working or waiting, those the board offers to pause or stop.
+ */
+export const NOTICE_FORM = "comchatx.notice/1";
+export const stillWorking = (n: number): string => JSON.stringify({
+  form: NOTICE_FORM,
+  zh: `${n} 个帮手仍在工作，可在“帮手”看板中暂停或停止。`,
+  en: n === 1 ? "A helper is still working. Pause or stop it from the Helpers board." : `${n} helpers are still working. Pause or stop them from the Helpers board.`,
+});
+
 /** The package's own tab on the person's board, declared in `package.json` (`comchatx.board`), and the folder its cards are in. */
 export const TAB = "帮手";
 /** The environment the computer hands each person's pi, naming that person's board (`CX_PERSON_FACTS`). */
@@ -589,6 +600,12 @@ export function boardCards(pi: ExtensionAPI, options: Options = {}): void {
     mkdirSync(tabDir(person), { recursive: true });
     try { tabWatch = watch(tabDir(person), () => presses(person)); tabWatch.on("error", () => { tabWatch?.close(); tabWatch = undefined; }); } catch { /* no presses heard */ }
     presses(person);
+  });
+  pi.on("agent_end", (_event, ctx) => {
+    if (ctx.signal?.aborted !== true) return;
+    const person = personDir(ctx.cwd);
+    const working = person === undefined ? 0 : cardsIn(person).filter((card) => card.state === "working" || card.state === "waiting").length;
+    if (working > 0) ctx.ui.notify(stillWorking(working), "info");
   });
   pi.on("session_shutdown", () => { for (const run of [...followers.keys()]) unfollow(run); tabWatch?.close(); tabWatch = undefined; });
   pi.on("tool_call", (event, ctx) => {
