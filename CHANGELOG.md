@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1
+
+- cx reads, beside the `subagent` tool, that a helper that failed or that the seller stopped is not continued: what is left of its work starts a new helper, with its own card and its own clock, on the model cx uses now. A resumed run keeps the model it was started with.
+
 ## 0.10.0
 
 - A helper's time is its runs' own, as pi-subagents keeps it: from the `startedAt` its `status.json` holds when the package hears the run start, to the result's own end, for each run. It runs on while the helper waits for cx and stands while it is paused. A helper continued goes on from what its earlier runs took instead of starting lower, and a helper continued twice is done after its three runs' time.

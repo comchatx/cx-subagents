@@ -33,8 +33,8 @@ it("leaves to cx which work to hand out and when to ask the seller: the sentence
   expect(HAND_OUT).not.toMatch(/listing|research|long|when you|always|never/i);
 });
 
-it("tells cx Jack's ruling whole, as a fact: the same work goes on with the same helper, soon is cheap, later it reads everything again, unrelated work starts a new one", () => {
-  expect(GO_ON).toBe("More of the same work goes on with the helper that did it, continued with `resume`, which keeps its card, its files and what it read: within minutes of its last step that is cheap, and later it reads its whole earlier run again; unrelated work starts a new helper.");
+it("tells cx the ruling of 2026-11-17 whole, as a fact: the same work goes on with the same helper, soon is cheap, later it reads everything again, unrelated work starts a new one, and so does work a failed or stopped helper left", () => {
+  expect(GO_ON).toBe("More of the same work goes on with the helper that did it, continued with `resume`, which keeps its card, its files and what it read: within minutes of its last step that is cheap, and later it reads its whole earlier run again; unrelated work starts a new helper. A helper that failed, or that the seller stopped, is not continued: what is left of that work starts a new helper.");
   expect(GO_ON).not.toMatch(/must|always|never|do not|don't/i);
 });
 
