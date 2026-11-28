@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.1
+
+- No clock stops what cx hands out in a workflow either. Each call of cx's that starts runs and names no limit, a workflow as well as a single run, carries the largest `timeoutMs` pi-subagents takes, and a workflow's own limit is what each child that names none is given: pi-subagents' own roles, such as `delegate`, no longer stop at its 30 minutes there. A limit cx names stays cx's.
+
 ## 0.11.0
 
 - A card whose run ended while no session heard its end no longer stays 正在处理 / Working on it: the next session's start ends it from its run's `status.json`, with that run's state and end.

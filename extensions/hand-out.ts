@@ -34,10 +34,10 @@ export const FORK =
   "A helper started with `context: \"fork\"` carries your conversation and is told no folder of its own.";
 
 /**
- * No clock stops a helper: the largest `timeoutMs` pi-subagents takes, the longest a Node.js timer waits (about 24.8 days), as its author
- * gives for a run with no practical deadline. `agents/helper.md` carries it in its frontmatter, which is what bounds a helper alone and
- * a helper inside a chain, parallel tasks or a workflow; a single run of another of pi-subagents' agents gets it on cx's call. A fan-out
- * has no deadline of its own, and its other agents' children keep theirs, which no call reaches. A limit cx names stays cx's.
+ * No clock stops a run cx starts: the largest `timeoutMs` pi-subagents takes, the longest a Node.js timer waits (about 24.8 days), as its
+ * author gives for a run with no practical deadline. It goes on each call of cx's that starts runs and names no limit, a single run or a
+ * workflow, whose own limit is what each child that names none is given; a limit cx names, on the call or on a child, stays cx's.
+ * `agents/helper.md` carries it too, for a workflow started where no call of cx's is heard, as a schedule starts one.
  */
 export const NO_CLOCK_MS = 2_147_483_647;
 
@@ -52,9 +52,6 @@ const given = (bag: unknown, key: string): boolean => {
   return value !== undefined && value !== "null" && !(key === "workflow" && value === "false");
 };
 
-/** A call that starts one run of an agent other than the helper: no `action`, no fan-out. */
-const startsOther = (input: Record<string, unknown>): boolean =>
-  !given(input, "action") && given(input, "agent") && input["agent"] !== "helper" && !given(input, "tasks") && !given(input, "chain") && !given(input, "workflow");
 
 export function handOut(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {
@@ -65,7 +62,8 @@ export function handOut(pi: ExtensionAPI): void {
     if (event.toolName !== SUBAGENT_TOOL) return;
     const input = event.input as Record<string, unknown>;
     const named = [input, input["options"]].some((bag) => given(bag, "timeoutMs") || given(bag, "maxRuntimeMs"));
-    if (startsOther(input) && !named) input["timeoutMs"] = NO_CLOCK_MS;
+    // A call with no `action` starts runs; one with an action manages them, and a resume is given no limit by pi-subagents.
+    if (!given(input, "action") && !named) input["timeoutMs"] = NO_CLOCK_MS;
   });
 }
 

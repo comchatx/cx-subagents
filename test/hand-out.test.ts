@@ -52,13 +52,13 @@ function called(input: Record<string, unknown>, toolName = SUBAGENT_TOOL): Recor
   return input;
 }
 
-it("gives a single run of another of pi-subagents' agents the largest limit upstream takes, where cx names none", () => {
+it("gives each call that starts runs the largest limit upstream takes, a single run or a workflow, where cx names none", () => {
   expect(NO_CLOCK_MS).toBe(2_147_483_647);
-  expect(called({ agent: "delegate", task: "t" })).toEqual({ agent: "delegate", task: "t", timeoutMs: NO_CLOCK_MS });
-  // The helper carries it in its own frontmatter, which also reaches it inside a fan-out.
-  expect(called({ agent: "helper", task: "t" })).toEqual({ agent: "helper", task: "t" });
-  // A fan-out has no deadline of its own, a resume none as today, and a limit cx names stays cx's.
-  for (const input of [{ tasks: [{ agent: "delegate", task: "t" }] }, { chain: [{ agent: "delegate", task: "t" }] }, { agent: "delegate", workflow: true }, { action: "resume", id: "r", message: "m" }, { action: "status" }, { agent: "delegate", task: "t", timeoutMs: 60_000 }, { agent: "delegate", task: "t", maxRuntimeMs: 60_000 }, { agent: "delegate", task: "t", options: { timeoutMs: 60_000 } }]) {
+  for (const input of [{ agent: "delegate", task: "t" }, { agent: "helper", task: "t" }, { workflow: true }, { workflow: true, async: false }, { workflow: "./review.js" }]) {
+    expect(called(structuredClone(input)), JSON.stringify(input)).toEqual({ ...input, timeoutMs: NO_CLOCK_MS });
+  }
+  // A call that manages runs starts none, a resume is given no limit by pi-subagents, and a limit cx names stays cx's.
+  for (const input of [{ action: "resume", id: "r", message: "m" }, { action: "status" }, { action: "validate", workflow: true }, { agent: "delegate", task: "t", timeoutMs: 60_000 }, { agent: "delegate", task: "t", maxRuntimeMs: 60_000 }, { agent: "delegate", task: "t", options: { timeoutMs: 60_000 } }]) {
     expect(called(structuredClone(input))).toEqual(input);
   }
   expect(called({ agent: "delegate", task: "t" }, "bash")).toEqual({ agent: "delegate", task: "t" });
