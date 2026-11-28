@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -145,7 +145,29 @@ export class Box {
     try { process.kill(-this.#child.pid!, "SIGTERM"); } catch { /* gone */ }
     await Promise.race([exited, new Promise((done) => setTimeout(done, 5_000))]);
     try { process.kill(-this.#child.pid!, "SIGKILL"); } catch { /* gone */ }
+    await exited;
+    // pi-subagents runs background work in a runner that leads a process group of its own, which pi's kill does not
+    // reach and which may still be writing its run into the home: each is killed, and the home goes once every group has.
+    const started = runners(this.home);
+    for (const pid of started) { try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ } }
+    await Promise.all([this.#child.pid!, ...started].map(groupGone));
     rmSync(this.home, { recursive: true, force: true });
+  }
+}
+
+/** The process groups of pi-subagents' background runners in a box's home, each led by the runner its run's status names. */
+function runners(home: string): number[] {
+  const runs = join(home, "tmp", `pi-subagents-uid-${process.getuid!()}`, "async-subagent-runs");
+  if (!existsSync(runs)) return [];
+  return readdirSync(runs).map((run) => join(runs, run, "status.json")).filter((status) => existsSync(status))
+    .map((status) => (JSON.parse(readFileSync(status, "utf8")) as { pid?: number }).pid).filter((pid): pid is number => typeof pid === "number");
+}
+
+/** Resolves once no process is left in the group `pgid` leads. */
+async function groupGone(pgid: number): Promise<void> {
+  for (;;) {
+    try { process.kill(-pgid, 0); } catch { return; }
+    await new Promise((done) => setTimeout(done, 20));
   }
 }
 
