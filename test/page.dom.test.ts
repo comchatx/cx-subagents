@@ -88,13 +88,20 @@ it("draws each helper in its group, at work, done and not finished, newest first
   expect(groups(p.document)).toEqual([
     ["进行中", [["竞品对比", "working", "正在处理"], ["评论汇总", "waiting", "等待 cx 回答"]]],
     ["已完成", [["价格检查", "done", `${time(Date.UTC(2026, 10, 19, 0, 15) + new Date(T0).getTimezoneOffset() * 60_000)} 完成，用时 4 分钟`]]],
-    ["未完成", [["退货查询", "stopped", `${time(T0 + 60_000)} 已停止`], ["广告报告", "failed", `${time(T0 + 120_000)} 出错，已停止`], ["标题改写", "off", "cx 的电脑关机，已中断"], ["库存核对", "timeout", `${time(T0 + 1_800_000)} 用时超过 30 分钟，已停止`]]],
+    ["未完成", [["退货查询", "stopped", `${time(T0 + 60_000)} 已停止`], ["广告报告", "failed", `${time(T0 + 120_000)} 出错，已停止`], ["标题改写", "off", "cx 的电脑关机，已中断"], ["库存核对", "timeout", `${time(T0 + 1_800_000)} 达到时间上限，已停止`]]],
   ]);
   expect(p.document.querySelector(".hc-groups")?.getAttribute("data-n")).toBe("3");
   // A helper at work says how long it has run; one that ended does not.
   expect([...p.document.querySelectorAll(".hc-card")].map((one) => one.querySelector(".hc-age") !== null)).toEqual([true, true, false, false, false, false, false]);
   // The figure works while the helper works, rests while it waits or once done, and sleeps where it ended with no result.
   expect(p.figures.map((one) => one.state)).toEqual(["analysing", "ready", "ready", "sleeping", "sleeping", "sleeping", "sleeping"]);
+});
+
+it("says a helper stopped at its time limit so in English, naming no length of time", async () => {
+  const p = page([card("d-subagent-4.md", { name: "Stock check", state: "timeout", at: T0, ended: T0 + 1_800_000 })], "en");
+  await settle();
+  const at = new Date(T0 + 1_800_000);
+  expect(p.document.querySelector(".hc-line")?.textContent).toBe(`Stopped at the time limit · ${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`);
 });
 
 it("draws one group with no heading, and the empty line where cx has handed nothing", async () => {
