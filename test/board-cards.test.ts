@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
@@ -188,102 +188,6 @@ it("goes on reading a run at work from where its file is when a new session star
   await eventually(() => s.card("20261105-093000-subagent-run-1.md")?.state, (one) => one === "waiting");
 });
 
-it("moves the package's earlier cards into the tab once, ended at their file's last write, and leaves the seller's own files", () => {
-  const s = session();
-  const todo = join(s.person, "todo"), done = join(s.person, "done");
-  mkdirSync(todo); mkdirSync(done);
-  const old = (place: string, name: string, words: string, at: number, modified: number) => {
-    writeFileSync(join(place, name), `---\nkind: finding\ntitle: ${JSON.stringify(words.split("\n")[0])}\nat: ${new Date(at).toISOString()}\n---\n\n${words}\n`);
-    utimesSync(join(place, name), modified / 1000, modified / 1000);
-  };
-  old(todo, "20261101-080000-subagent-r1.md", "B0A and B0C have thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
-  old(done, "20261102-080000-subagent-r2.md", "超时\n\nB0A checked so far.", Date.UTC(2026, 10, 2, 8), Date.UTC(2026, 10, 2, 8, 30));
-  writeFileSync(join(done, "my-notes.md"), "mine");
-  s.start();
-  expect(s.files()).toEqual(["20261101-080000-subagent-r1.md", "20261102-080000-subagent-r2.md"]);
-  expect(s.card("20261101-080000-subagent-r1.md")).toMatchObject({ name: "B0A and B0C have thin titles.", face: 0, state: "done", at: Date.UTC(2026, 10, 1, 8), ended: Date.UTC(2026, 10, 1, 8, 4), took: 240, run: "r1" });
-  expect(s.card("20261102-080000-subagent-r2.md")).toMatchObject({ name: "超时", face: 1, state: "timeout", took: 1800, run: "r2" });
-  // The empty `todo/` is gone; `done/` keeps the seller's file.
-  expect(readdirSync(s.person).sort()).toEqual(["done", TAB]);
-  expect(readdirSync(done)).toEqual(["my-notes.md"]);
-  // A second start finds nothing to move.
-  s.start();
-  expect(s.files()).toHaveLength(2);
-});
-
-/** A card as 0.3.5 and the versions before it wrote it, or as the board's module left it once the seller handled it. */
-function earlierCard(place: string, name: string, words: string, at: number, modified: number, handled = false): string {
-  mkdirSync(place, { recursive: true });
-  const marks = handled ? `\ndone: read\ndoneAt: ${new Date(modified).toISOString()}` : "";
-  writeFileSync(join(place, name), `---\nkind: finding\ntitle: ${JSON.stringify(words.split("\n")[0])}\nat: ${new Date(at).toISOString()}${marks}\n---\n\n${words}\n`);
-  utimesSync(join(place, name), modified / 1000, modified / 1000);
-  return join(place, name);
-}
-
-it("leaves a seller's own file whose name ends as a helper card's, and moves only what the package wrote", () => {
-  const s = session();
-  const todo = join(s.person, "todo");
-  mkdirSync(todo);
-  const note = "---\nkind: choice\ntitle: \"Which plan?\"\nat: 2026-11-19T08:00:00.000Z\noptions:\n  - A\n  - B\n---\n\nPick one.\n";
-  writeFileSync(join(todo, "20261119-080000-seller-subagent-plan.md"), note);
-  writeFileSync(join(todo, "20261119-090000-subagent-x.md"), "my own words, no front matter\n");
-  earlierCard(todo, "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
-  s.start();
-  expect(s.files()).toEqual(["20261101-080000-subagent-r1.md"]);
-  expect(readdirSync(todo).sort()).toEqual(["20261119-080000-seller-subagent-plan.md", "20261119-090000-subagent-x.md"]);
-  expect(readFileSync(join(todo, "20261119-080000-seller-subagent-plan.md"), "utf8")).toBe(note);
-});
-
-it("leaves an earlier card where it is when its place in the tab is taken by another file, and overwrites nothing", () => {
-  const s = session();
-  const source = earlierCard(join(s.person, "todo"), "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
-  mkdirSync(s.tab);
-  writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "the seller's own file\n");
-  s.start();
-  expect([readFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "utf8"), existsSync(source)]).toEqual(["the seller's own file\n", true]);
-  // A start cut between the write and the removal leaves the card in the tab and the earlier copy in its old place: both stand.
-  const written = cardText({ file: "20261101-080000-subagent-r1.md", name: "Renamed", face: 3, state: "done", at: Date.UTC(2026, 10, 1, 8), run: "r1", task: "Thin titles." });
-  writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), written);
-  const earlier = readFileSync(source, "utf8");
-  s.start();
-  expect([readFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "utf8"), existsSync(source) && readFileSync(source, "utf8")]).toEqual([written, earlier]);
-});
-
-it("leaves both files as they were when the tab's place holds a seller's finding whose words show a helper card's head", () => {
-  const s = session();
-  const source = earlierCard(join(s.person, "todo"), "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
-  mkdirSync(s.tab);
-  const finding = "---\nkind: finding\ntitle: \"How a helper card looks\"\nat: 2026-11-18T10:00:00.000Z\n---\n\nAn example:\n\n```\n---\nkind: \"helper\"\ntitle: \"x\"\n---\n```\n";
-  writeFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), finding);
-  const earlier = readFileSync(source, "utf8");
-  s.start();
-  expect([readFileSync(join(s.tab, "20261101-080000-subagent-r1.md"), "utf8"), existsSync(source) && readFileSync(source, "utf8")]).toEqual([finding, earlier]);
-});
-
-it("moves the package's cards from the board's own move of the old places into a tab, handled ones as finished, in either order of the two moves", () => {
-  // The board moved the old `todo/` and `done/` into its module's tab, 待办, first: the cards are in that tab's places.
-  const first = session();
-  const module = join(first.person, "待办");
-  earlierCard(join(module, "todo"), "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
-  earlierCard(join(module, "done"), "20261102-080000-subagent-r2.md", "Read ten reviews.", Date.UTC(2026, 10, 2, 8), Date.UTC(2026, 10, 2, 9), true);
-  writeFileSync(join(module, "todo", "20261103-080000-plan.md"), "---\nkind: proposal\ntitle: \"Plan\"\nat: 2026-11-03T08:00:00.000Z\n---\n\nA plan.\n");
-  first.start();
-  expect(first.files()).toEqual(["20261101-080000-subagent-r1.md", "20261102-080000-subagent-r2.md"]);
-  expect(first.card("20261102-080000-subagent-r2.md")).toMatchObject({ name: "Read ten reviews.", state: "done", run: "r2" });
-  // The module's places stay as the board made them, with the seller's files.
-  expect([readdirSync(join(module, "todo")), readdirSync(join(module, "done"))]).toEqual([["20261103-080000-plan.md"], []]);
-  // The package moved first, and the board's move came after with the seller's file left in `todo/`: nothing of the package's is left to move.
-  const second = session();
-  const todo = join(second.person, "todo");
-  earlierCard(todo, "20261101-080000-subagent-r1.md", "Thin titles.", Date.UTC(2026, 10, 1, 8), Date.UTC(2026, 10, 1, 8, 4));
-  writeFileSync(join(todo, "mine.md"), "mine\n");
-  second.start();
-  mkdirSync(join(second.person, "待办"));
-  renameSync(todo, join(second.person, "待办", "todo"));
-  second.start();
-  expect([second.files(), readdirSync(join(second.person, "待办", "todo"))]).toEqual([["20261101-080000-subagent-r1.md"], ["mine.md"]]);
-});
-
 it("times a run from the start pi-subagents gives it, and runs on while the helper waits for an answer", async () => {
   const s = session();
   const run = runDir(s.cwd, "run-1", T0 - 30_000);
@@ -359,7 +263,7 @@ it("marks off a card at work whose run's folder outlived the stop on the disk, i
   }
   s.start();
   const states = () => s.files().map((name) => [s.card(name)?.name, s.card(name)?.state]);
-  expect(states()).toEqual([["cut", "off"], ["queued", "off"], ["here", "working"], ["unknown", "working"], ["ended-unheard", "working"]]);
+  expect(states()).toEqual([["cut", "off"], ["queued", "off"], ["here", "working"], ["unknown", "working"], ["ended-unheard", "done"]]);
   // pi-subagents reconciles the cut run as failed, and that end reaches the package.
   s.complete({ id: "run-cut", state: "failed", success: false, durationMs: 10 });
   s.complete({ id: "run-ended-unheard", state: "complete", success: true, durationMs: 10 });
@@ -627,4 +531,15 @@ it("keeps a helper's steps when it goes on, paused, done or failed, until it lis
     expect(await eventually(() => s.card(file)?.steps, (steps) => steps?.length === 1)).toEqual([{ words: "Add Japan", state: "now" }]);
     s.result("c2");
   }
+});
+
+it("reads a card with no state as done, as the page does: a press it cannot do writes it back done, not at work", () => {
+  const s = session();
+  s.start();
+  const file = "20261105-093000-subagent-run-bare.md";
+  const text = cardText({ file, name: "bare", face: 0, state: "done", at: T0, run: "run-bare", task: "t" }).replace(/^state: .*\n/m, "").replace(/\n---\n/, `\npress: "pause"\n---\n`);
+  writeFileSync(join(s.tab, file), text);
+  s.start();
+  expect(s.card(file)).toMatchObject({ state: "done" });
+  expect(readFileSync(join(s.tab, file), "utf8")).not.toMatch(/^press: /m);
 });

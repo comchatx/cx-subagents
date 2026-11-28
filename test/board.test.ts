@@ -190,17 +190,3 @@ it("says the helper waits for cx's answer while it asks cx, and at work again on
   await eventually(() => { const state = cards(tab)[0]?.state; if (state !== undefined && seen.at(-1) !== state) seen.push(state); return seen; }, (list) => list.includes("done"), 120_000);
   expect(seen).toEqual(["working", "waiting", "working", "done"]);
 }, 180_000);
-
-it("moves the cards the package's earlier versions wrote in the person's to-do places into its tab when pi starts", async () => {
-  const model = await scriptedModel(() => ({ role: "parent", answer: { parts: [{ text: "NOTHING" }] } }));
-  closers.push(model.close);
-  const box = new Box(model.url);
-  boxes.push(box);
-  const person = join(box.home, "tenant", "board", PERSON);
-  mkdirSync(join(person, "todo"), { recursive: true });
-  writeFileSync(join(person, "todo", "20261101-080000-subagent-old-run.md"), "---\nkind: finding\ntitle: \"thin titles\"\nat: 2026-11-01T08:00:00.000Z\n---\n\nB0A and B0C have thin titles.\n");
-  box.prompt("Hello.");
-  await box.until(said("NOTHING"), 60_000);
-  expect(cards(join(person, TAB))).toMatchObject([{ file: "20261101-080000-subagent-old-run.md", name: "thin titles", face: 0, state: "done", run: "old-run" }]);
-  expect(readdirSync(person)).toEqual([TAB]);
-}, 120_000);
