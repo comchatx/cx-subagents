@@ -2,7 +2,7 @@
 
 ## 0.11.2
 
-- The README's line on what a card does not list says data cx buys from a data source / cx 从数据源买的数据, in place of `cx get`.
+- The README's line on what a card does not list says data cx buys from a data source / cx 从数据源买的数据, in place of `cx get`, and so does the sentence a helper is given about its own folder: data cx buys from a data source stays where it lands.
 
 ## 0.11.1
 

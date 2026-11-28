@@ -10,7 +10,7 @@ import { personDir, stamp, TAB } from "./board-cards.js";
 export const FOLDERS = TAB;
 /** What a new helper is told of its folder, after its task: where it is, that bought data stays where it lands, and that a place the task names wins. */
 export const ownFolder = (folder: string): string =>
-  `Your own folder for this work is \`${folder}/\`: put the files you make there, unless this task names another place for them, which then wins. Data bought with \`cx get\` stays where it lands; do not copy it into your folder.`;
+  `Your own folder for this work is \`${folder}/\`: put the files you make there, unless this task names another place for them, which then wins. Data cx buys from a data source stays where it lands; do not copy it into your folder.`;
 
 /** A new folder for a helper of the person's, by its start's time, made now so a second helper started in the same second takes the next name. */
 export function newFolder(tree: string, person: string, at: number): string {

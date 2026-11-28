@@ -106,7 +106,7 @@ it("tells a helper whose task names a place that the place wins, and the result 
   const [done] = await eventually(() => cards(tab), (list) => list[0]?.state === "done", 90_000);
   const helper = model.asked.find((one) => one.role === "helper")!;
   expect(helper.last).toMatch(/unless this task names another place for them, which then wins/);
-  expect(helper.last).toMatch(/Data bought with `cx get` stays where it lands/);
+  expect(helper.last).toMatch(/Data cx buys from a data source stays where it lands/);
   const folder = folderIn(helper.last)!;
   expect(readFileSync(join(tenant, "reports", "june.md"), "utf8")).toBe("JUNE");
   expect(readdirSync(join(tenant, folder))).toEqual([]);

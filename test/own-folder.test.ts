@@ -37,7 +37,7 @@ it("says a new helper's folder after its task, made at its first prompt, a secon
   one.clock.at = T0 + 1000;
   expect(one.prompt("Task: Price B.").text).toContain(ownFolder(`${FOLDERS}/acct_1/20261105-093001`));
   expect(readdirSync(join(one.cwd, FOLDERS, "acct_1"))).toEqual(["20261105-093000", "20261105-093000-2", "20261105-093001"]);
-  expect(ownFolder(folder)).toBe(`Your own folder for this work is \`${folder}/\`: put the files you make there, unless this task names another place for them, which then wins. Data bought with \`cx get\` stays where it lands; do not copy it into your folder.`);
+  expect(ownFolder(folder)).toBe(`Your own folder for this work is \`${folder}/\`: put the files you make there, unless this task names another place for them, which then wins. Data cx buys from a data source stays where it lands; do not copy it into your folder.`);
 });
 
 it("tells a continued run nothing, nor an empty prompt, nor a session with no person's board, and makes no folder for them", () => {
